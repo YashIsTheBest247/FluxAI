@@ -95,15 +95,16 @@ async def run_pipeline(job: Job) -> None:
         title, scenes = await script_service.generate_scenes(job.topic, job.duration, job.key_points)
         _set_stage(job, JobStage.SCRIPT, 1.0, f"{len(scenes)} scenes")
 
-        # 2. Images
+        # 2 + 3. Images and voice run concurrently — they're independent and both
+        # only depend on the script. Each one also runs its own scenes in parallel.
         _set_stage(job, JobStage.IMAGE, 0.0, "Rendering visuals")
-        img_cb = await _make_stage_progress(job, JobStage.IMAGE)
-        image_paths = await image_service.generate_images(scenes, work_dir / "images", on_progress=img_cb)
-
-        # 3. Voice
         _set_stage(job, JobStage.VOICE, 0.0, "Synthesising narration")
+        img_cb = await _make_stage_progress(job, JobStage.IMAGE)
         v_cb = await _make_stage_progress(job, JobStage.VOICE)
-        audio_results = await voice_service.synthesize_scenes(scenes, work_dir / "audio", on_progress=v_cb)
+        image_paths, audio_results = await asyncio.gather(
+            image_service.generate_images(scenes, work_dir / "images", on_progress=img_cb),
+            voice_service.synthesize_scenes(scenes, work_dir / "audio", on_progress=v_cb),
+        )
         audio_lengths = [d for _, d in audio_results]
 
         # 4. Subtitles

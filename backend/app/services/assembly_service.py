@@ -189,7 +189,11 @@ def assemble_video(
     scene_clips = []
     audio_clips = []
     for i, (scene, img_path, (audio_path, dur)) in enumerate(zip(scenes, image_paths, audio_paths)):
-        clip = _static_scene_clip(img_path, dur).crossfadein(0.3)
+        # Tighter crossfade (0.15s) = fewer alpha-blended frames per scene transition.
+        # First clip skips the crossfade entirely (nothing to blend into).
+        clip = _static_scene_clip(img_path, dur)
+        if i > 0:
+            clip = clip.crossfadein(0.15)
         scene_clips.append(clip)
         audio_clips.append(AudioFileClip(str(audio_path)).set_duration(dur))
 
@@ -197,15 +201,14 @@ def assemble_video(
     body_audio = concatenate_audioclips(audio_clips).set_duration(body.duration)
     body = body.set_audio(body_audio)
 
-    # Only composite subtitles when there are any (TextClip needs ImageMagick).
+    # Only composite subtitles when there are any.
     subs = _subtitle_clips(srt_path)
     if subs:
         body = CompositeVideoClip([body, *subs], size=(VIDEO_W, VIDEO_H)).set_audio(body_audio)
 
-    # Intro / Outro
-    intro = _intro_outro(title, 1.4)
-    outro = _intro_outro("Flux", 1.0)
-    final = concatenate_videoclips([intro, body, outro], method="compose")
+    # No intro/outro — they add ~2.4s of extra encoding for marketing fluff.
+    # If you want a wordmark stinger later, add it as an overlay on the last scene instead.
+    final = body
 
     final.write_videofile(
         str(out_path),
@@ -213,10 +216,11 @@ def assemble_video(
         codec="libx264",
         audio_codec="aac",
         bitrate="1500k",
+        audio_bitrate="96k",     # voice doesn't need 128k+
         preset="ultrafast",
         threads=4,
-        verbose=True,
-        logger="bar",  # show progress in the uvicorn terminal — no more silent hangs
+        verbose=False,
+        logger="bar",            # show progress in the uvicorn terminal
         temp_audiofile=str(out_path.with_suffix(".audio.m4a")),
         remove_temp=True,
         ffmpeg_params=["-tune", "stillimage", "-movflags", "+faststart"],

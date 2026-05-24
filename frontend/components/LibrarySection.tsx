@@ -35,7 +35,6 @@ export default function LibrarySection() {
     <section id="library" className="border-t border-line">
       <div className="mx-auto max-w-7xl px-6 pb-16 pt-6 sm:pb-20 sm:pt-8">
         <SectionHeader
-          eyebrow="LIBRARY"
           title="YOUR"
           accent="ARCHIVE."
           description="Every finished render — downloadable, replayable, searchable."

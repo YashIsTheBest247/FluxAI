@@ -11,7 +11,6 @@ export default function CreatorSection() {
     <section id="creator" className="border-t border-line">
       <div className="mx-auto max-w-7xl px-6 pb-16 pt-6 sm:pb-20 sm:pt-8">
         <SectionHeader
-          eyebrow="CREATOR"
           title="COMPOSE,"
           accent="RENDER, PUBLISH."
           description="Type a topic. We handle scripting, visuals, narration and assembly — then publish straight to YouTube."

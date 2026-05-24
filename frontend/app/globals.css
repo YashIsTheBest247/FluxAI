@@ -8,8 +8,8 @@ html {
   scroll-padding-top: 96px; /* keep section headings clear of the fixed navbar */
 }
 html, body {
-  background: #101013;
-  color: #FAFAFA;
+  background: #1A1A1E;
+  color: #F5F5F5;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
@@ -17,12 +17,12 @@ html, body {
 }
 body { font-family: var(--font-sans), system-ui, sans-serif; }
 
-::selection { background: #B91C1C; color: #ffffff; }
+::selection { background: #8B1F1F; color: #ffffff; }
 
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.10); border-radius: 999px; }
-::-webkit-scrollbar-thumb:hover { background: #B91C1C; }
+::-webkit-scrollbar-thumb:hover { background: #8B1F1F; }
 
 @layer components {
   .display {
@@ -41,7 +41,7 @@ body { font-family: var(--font-sans), system-ui, sans-serif; }
   .eyebrow-dot { @apply inline-block h-1.5 w-1.5 rounded-full bg-red; }
 
   .rule       { height: 1px; background: rgba(255,255,255,0.08); }
-  .rule-red   { height: 2px; background: #B91C1C; }
+  .rule-red   { height: 2px; background: #8B1F1F; }
 
   /* Buttons */
   .btn {
@@ -49,9 +49,9 @@ body { font-family: var(--font-sans), system-ui, sans-serif; }
   }
   .btn-red {
     @apply btn bg-red text-white;
-    box-shadow: 0 1px 0 rgba(255,255,255,0.20) inset, 0 8px 22px -10px rgba(185,28,28,0.55);
+    box-shadow: 0 1px 0 rgba(255,255,255,0.20) inset, 0 8px 22px -10px rgba(139,31,31,0.55);
   }
-  .btn-red:hover { background: #DC2626; transform: translateY(-1px); box-shadow: 0 1px 0 rgba(255,255,255,0.25) inset, 0 12px 30px -10px rgba(185,28,28,0.65); }
+  .btn-red:hover { background: #A52525; transform: translateY(-1px); box-shadow: 0 1px 0 rgba(255,255,255,0.25) inset, 0 12px 30px -10px rgba(139,31,31,0.55); }
   .btn-outline {
     @apply btn border border-line text-ink;
   }
@@ -67,12 +67,12 @@ body { font-family: var(--font-sans), system-ui, sans-serif; }
     @apply w-full bg-transparent px-0 py-3 text-base text-ink placeholder:text-ink-faint outline-none transition;
     border-bottom: 1px solid rgba(255,255,255,0.16);
   }
-  .input-line:focus { border-bottom-color: #B91C1C; }
+  .input-line:focus { border-bottom-color: #8B1F1F; }
 
   .input-box {
     @apply w-full rounded-lg border border-line bg-bg-elevated px-4 py-3 text-sm text-ink placeholder:text-ink-faint outline-none transition;
   }
-  .input-box:focus { border-color: rgba(185,28,28,0.55); box-shadow: 0 0 0 3px rgba(185,28,28,0.10); }
+  .input-box:focus { border-color: rgba(139,31,31,0.55); box-shadow: 0 0 0 3px rgba(139,31,31,0.10); }
 
   .field-label {
     @apply text-[11px] font-medium uppercase tracking-eyebrow text-ink-muted;
@@ -120,7 +120,7 @@ body { font-family: var(--font-sans), system-ui, sans-serif; }
 }
 
 /* Italic accent helper using display font */
-.italic-accent { color: #B91C1C; }
+.italic-accent { color: #8B1F1F; }
 
 /* Index numerals (display font, dim) */
 .index-num {
@@ -133,8 +133,8 @@ body { font-family: var(--font-sans), system-ui, sans-serif; }
 /* Soft red aura for hero */
 .red-aura {
   background:
-    radial-gradient(40% 30% at 20% 10%, rgba(185,28,28,0.18), transparent 70%),
-    radial-gradient(35% 28% at 85% 30%, rgba(185,28,28,0.10), transparent 70%);
+    radial-gradient(40% 30% at 20% 10%, rgba(139,31,31,0.18), transparent 70%),
+    radial-gradient(35% 28% at 85% 30%, rgba(139,31,31,0.10), transparent 70%);
   filter: blur(20px);
 }
 

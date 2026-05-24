@@ -20,7 +20,14 @@ logger = logging.getLogger(__name__)
 
 SYSTEM_PROMPT = """You are a senior educational video scriptwriter.
 You will receive a TOPIC, target DURATION in seconds, and optional KEY POINTS.
-Break the video into 4-8 cohesive SCENES. For each scene produce:
+
+SCENE COUNT rules — fewer is faster and tighter:
+  - DURATION <= 20s  → exactly 3 scenes
+  - DURATION 21-45s  → 3 or 4 scenes
+  - DURATION 46-90s  → 4 or 5 scenes
+  - DURATION > 90s   → 5 or 6 scenes (NEVER more than 6)
+
+For each scene produce:
   - narration: 1-3 sentences, conversational, factual, no filler
   - image_prompt: a vivid, cinematic visual description (no text overlays, no logos)
   - duration: seconds (float), summing approximately to the target duration
@@ -30,7 +37,15 @@ No prose, no markdown fences."""
 
 
 def _mock_scenes(topic: str, duration: int, key_points: Optional[str]) -> tuple[str, List[Scene]]:
-    n = max(4, min(8, duration // 6))
+    # Match the same scene-count rule as the real provider prompt
+    if duration <= 20:
+        n = 3
+    elif duration <= 45:
+        n = 4
+    elif duration <= 90:
+        n = 5
+    else:
+        n = 6
     per = duration / n
     title = topic.strip().title()
     snippets = [

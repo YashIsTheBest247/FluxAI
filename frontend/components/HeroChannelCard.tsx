@@ -34,7 +34,7 @@ export default function HeroChannelCard() {
       className="relative"
     >
       {/* Outer soft glow */}
-      <div className="pointer-events-none absolute -inset-8 bg-[radial-gradient(circle_at_30%_30%,rgba(185,28,28,0.18),transparent_65%)] blur-2xl" />
+      <div className="pointer-events-none absolute -inset-8 bg-[radial-gradient(circle_at_30%_30%,rgba(139,31,31,0.18),transparent_65%)] blur-2xl" />
 
       <div className="relative overflow-hidden rounded-2xl border border-line bg-bg-card shadow-raised">
         {/* Channel header */}

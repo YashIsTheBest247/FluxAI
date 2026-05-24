@@ -9,7 +9,7 @@ export default function SectionHeader({
   description,
   right,
 }: {
-  eyebrow: string;
+  eyebrow?: string;
   title: string;
   accent?: string;
   description?: string;
@@ -24,10 +24,12 @@ export default function SectionHeader({
       className="mb-8 grid items-end gap-6 lg:grid-cols-12"
     >
       <div className="lg:col-span-8">
-        <div className="eyebrow">
-          <span className="eyebrow-dot" /> {eyebrow}
-        </div>
-        <h2 className="display mt-4 text-display leading-[0.92]">
+        {eyebrow && (
+          <div className="eyebrow">
+            <span className="eyebrow-dot" /> {eyebrow}
+          </div>
+        )}
+        <h2 className="display text-display leading-[0.92]">
           {title} {accent && <span className="text-red">{accent}</span>}
         </h2>
         {description && (

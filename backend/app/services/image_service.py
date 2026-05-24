@@ -95,16 +95,20 @@ async def _openai_image(prompt: str, out: Path) -> Path:
 
 
 async def _pollinations_image(prompt: str, out: Path) -> Path:
-    """Pollinations.ai — no auth required. GET an image URL and download the bytes."""
+    """Pollinations.ai — no auth required. GET an image URL and download the bytes.
+
+    Dropped enhance=true and shrank to 768x768 — both are huge speed wins,
+    and the final MP4 is only 1280x720 anyway so we never see the lost detail.
+    """
     encoded = urllib.parse.quote(prompt, safe="")
     seed = int(hashlib.md5(prompt.encode()).hexdigest()[:8], 16) % 1_000_000
     url = (
         f"https://image.pollinations.ai/prompt/{encoded}"
-        f"?width=1024&height=1024&model={settings.pollinations_model}"
-        f"&seed={seed}&nologo=true&enhance=true&nofeed=true"
+        f"?width=768&height=768&model={settings.pollinations_model}"
+        f"&seed={seed}&nologo=true&nofeed=true"
     )
     out.parent.mkdir(parents=True, exist_ok=True)
-    async with httpx.AsyncClient(timeout=180, follow_redirects=True) as client:
+    async with httpx.AsyncClient(timeout=120, follow_redirects=True) as client:
         r = await client.get(url)
         r.raise_for_status()
         if not r.content or len(r.content) < 1000:
@@ -128,11 +132,23 @@ async def generate_image(prompt: str, out: Path) -> Path:
 
 
 async def generate_images(scenes: List[Scene], out_dir: Path, on_progress=None) -> List[Path]:
+    """Generate all scene images concurrently. Pollinations / DALL-E both handle
+    parallel requests fine, so total wait shrinks from sum(per-image) to ~max(per-image)."""
     out_dir.mkdir(parents=True, exist_ok=True)
-    paths: List[Path] = []
-    for i, scene in enumerate(scenes):
+    total = len(scenes)
+    done = 0
+    lock = asyncio.Lock()
+
+    async def one(i: int, scene: Scene) -> tuple[int, Path]:
+        nonlocal done
         p = await generate_image(scene.image_prompt, out_dir / f"scene_{i:02d}.png")
-        paths.append(p)
-        if on_progress:
-            await on_progress((i + 1) / len(scenes))
-    return paths
+        async with lock:
+            done += 1
+            if on_progress:
+                await on_progress(done / total)
+        return i, p
+
+    results = await asyncio.gather(*[one(i, s) for i, s in enumerate(scenes)])
+    # Preserve scene order regardless of which finished first.
+    results.sort(key=lambda x: x[0])
+    return [p for _, p in results]

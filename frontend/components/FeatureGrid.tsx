@@ -62,13 +62,13 @@ export default function FeatureGrid() {
     return STAGES.map((_, i) => (i < idx ? "done" : i === idx ? "active" : "idle"));
   }, [active]);
 
-  const status = useMemo<{ label: string; tone: "ok" | "red" | "fail" }>(() => {
-    if (!active) return { label: `LIBRARY SYNCED · ${videos.length}`, tone: "red" };
-    if (active.stage === "done")   return { label: "RENDER COMPLETE", tone: "ok" };
-    if (active.stage === "failed") return { label: "RENDER FAILED",   tone: "fail" };
-    if (active.stage === "queued") return { label: "QUEUED",          tone: "red" };
+  const status = useMemo<{ label: string; tone: "ok" | "red" | "fail"; pulse: boolean }>(() => {
+    if (!active) return { label: `LIBRARY SYNCED · ${videos.length}`, tone: "red",  pulse: false };
+    if (active.stage === "done")   return { label: "RENDER COMPLETE", tone: "ok",   pulse: false };
+    if (active.stage === "failed") return { label: "RENDER FAILED",   tone: "fail", pulse: false };
+    if (active.stage === "queued") return { label: "QUEUED",          tone: "red",  pulse: true  };
     const idx = STAGE_INDEX[active.stage] ?? 0;
-    return { label: `RENDERING · ${STAGES[idx]?.title ?? ""}`, tone: "red" };
+    return { label: `RENDERING · ${STAGES[idx]?.title ?? ""}`, tone: "red", pulse: true };
   }, [active, videos.length]);
 
   return (
@@ -205,7 +205,7 @@ function StageNode({
   );
 }
 
-function StatusBadge({ label, tone }: { label: string; tone: "ok" | "red" | "fail" }) {
+function StatusBadge({ label, tone, pulse }: { label: string; tone: "ok" | "red" | "fail"; pulse: boolean }) {
   if (tone === "ok") {
     return (
       <div className="inline-flex items-center gap-2 font-mono text-[11px] font-bold uppercase tracking-widest text-ink">
@@ -224,10 +224,12 @@ function StatusBadge({ label, tone }: { label: string; tone: "ok" | "red" | "fai
   }
   return (
     <div className="inline-flex items-center gap-2 font-mono text-[11px] font-bold uppercase tracking-widest text-red">
-      <span className="relative flex h-2 w-2">
-        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red opacity-70" />
-        <span className="relative inline-flex h-2 w-2 rounded-full bg-red" />
-      </span>
+      {pulse && (
+        <span className="relative flex h-2 w-2">
+          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red opacity-70" />
+          <span className="relative inline-flex h-2 w-2 rounded-full bg-red" />
+        </span>
+      )}
       {label}
     </div>
   );

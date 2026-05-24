@@ -13,7 +13,13 @@ def _td(seconds: float) -> pysrt.SubRipTime:
     return pysrt.SubRipTime(milliseconds=ms)
 
 
-def _chunk(text: str, max_chars: int = 42) -> List[str]:
+def _chunk(text: str, max_chars: int = 110) -> List[str]:
+    """Word-wrap to ~110 chars. Most scene narrations fit in 1 chunk now,
+    which means one subtitle clip per scene instead of 3-4 — dramatic assembly speedup
+    (compositing cost scales with chunk count, not narration length)."""
+    text = text.strip()
+    if len(text) <= max_chars:
+        return [text]
     words = text.split()
     chunks: List[str] = []
     cur = ""

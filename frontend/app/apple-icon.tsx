@@ -29,8 +29,8 @@ function Dot({ on }: { on: boolean }) {
         width: DOT,
         height: DOT,
         borderRadius: DOT / 2,
-        background: on ? "#DC2626" : "transparent",
-        boxShadow: on ? `0 0 22px rgba(220,38,38,0.55)` : "none",
+        background: on ? "#A52525" : "transparent",
+        boxShadow: on ? `0 0 22px rgba(165,37,37,0.45)` : "none",
       }}
     />
   );

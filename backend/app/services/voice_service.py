@@ -67,15 +67,29 @@ async def synthesize_scene(text: str, out: Path, fallback_seconds: float) -> Tup
 
 
 async def synthesize_scenes(scenes: List[Scene], out_dir: Path, on_progress=None) -> List[Tuple[Path, float]]:
+    """Synthesise narration for all scenes in parallel.
+    Kokoro is CPU/GPU-bound so we cap concurrency at 2 to avoid OOM."""
+    import asyncio
     out_dir.mkdir(parents=True, exist_ok=True)
-    results: List[Tuple[Path, float]] = []
-    for i, scene in enumerate(scenes):
-        result = await synthesize_scene(
-            scene.narration,
-            out_dir / f"scene_{i:02d}.wav",
-            fallback_seconds=scene.duration,
-        )
-        results.append(result)
-        if on_progress:
-            await on_progress((i + 1) / len(scenes))
-    return results
+    total = len(scenes)
+    done = 0
+    sem = asyncio.Semaphore(2)
+    lock = asyncio.Lock()
+
+    async def one(i: int, scene: Scene) -> Tuple[int, Tuple[Path, float]]:
+        nonlocal done
+        async with sem:
+            res = await synthesize_scene(
+                scene.narration,
+                out_dir / f"scene_{i:02d}.wav",
+                fallback_seconds=scene.duration,
+            )
+        async with lock:
+            done += 1
+            if on_progress:
+                await on_progress(done / total)
+        return i, res
+
+    results = await asyncio.gather(*[one(i, s) for i, s in enumerate(scenes)])
+    results.sort(key=lambda x: x[0])
+    return [r for _, r in results]

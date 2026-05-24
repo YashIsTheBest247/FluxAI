@@ -6,7 +6,7 @@
     </radialGradient>
   </defs>
   <rect width="32" height="32" rx="7" fill="url(#bg)"/>
-  <g fill="#DC2626">
+  <g fill="#A52525">
     <!-- Row 1: top bar -->
     <circle cx="9"  cy="9"  r="1.7"/>
     <circle cx="16" cy="9"  r="1.7"/>
