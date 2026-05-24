@@ -1,0 +1,141 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ===== Base ===== */
+html {
+  scroll-behavior: smooth;
+  scroll-padding-top: 96px; /* keep section headings clear of the fixed navbar */
+}
+html, body {
+  background: #101013;
+  color: #FAFAFA;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  font-feature-settings: "ss01", "cv11";
+}
+body { font-family: var(--font-sans), system-ui, sans-serif; }
+
+::selection { background: #B91C1C; color: #ffffff; }
+
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.10); border-radius: 999px; }
+::-webkit-scrollbar-thumb:hover { background: #B91C1C; }
+
+@layer components {
+  .display {
+    font-family: var(--font-display), Impact, sans-serif;
+    font-weight: 400;
+    text-transform: uppercase;
+  }
+  .num {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum";
+  }
+
+  .eyebrow {
+    @apply inline-flex items-center gap-2 text-[11px] font-medium uppercase tracking-eyebrow text-ink-muted;
+  }
+  .eyebrow-dot { @apply inline-block h-1.5 w-1.5 rounded-full bg-red; }
+
+  .rule       { height: 1px; background: rgba(255,255,255,0.08); }
+  .rule-red   { height: 2px; background: #B91C1C; }
+
+  /* Buttons */
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-full px-6 py-3 text-sm font-semibold tracking-wide uppercase transition-all;
+  }
+  .btn-red {
+    @apply btn bg-red text-white;
+    box-shadow: 0 1px 0 rgba(255,255,255,0.20) inset, 0 8px 22px -10px rgba(185,28,28,0.55);
+  }
+  .btn-red:hover { background: #DC2626; transform: translateY(-1px); box-shadow: 0 1px 0 rgba(255,255,255,0.25) inset, 0 12px 30px -10px rgba(185,28,28,0.65); }
+  .btn-outline {
+    @apply btn border border-line text-ink;
+  }
+  .btn-outline:hover { border-color: rgba(255,255,255,0.30); background: rgba(255,255,255,0.04); }
+  .btn-ghost {
+    @apply btn text-ink-soft;
+  }
+  .btn-ghost:hover { color: #fff; background: rgba(255,255,255,0.04); }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  /* Inputs */
+  .input-line {
+    @apply w-full bg-transparent px-0 py-3 text-base text-ink placeholder:text-ink-faint outline-none transition;
+    border-bottom: 1px solid rgba(255,255,255,0.16);
+  }
+  .input-line:focus { border-bottom-color: #B91C1C; }
+
+  .input-box {
+    @apply w-full rounded-lg border border-line bg-bg-elevated px-4 py-3 text-sm text-ink placeholder:text-ink-faint outline-none transition;
+  }
+  .input-box:focus { border-color: rgba(185,28,28,0.55); box-shadow: 0 0 0 3px rgba(185,28,28,0.10); }
+
+  .field-label {
+    @apply text-[11px] font-medium uppercase tracking-eyebrow text-ink-muted;
+  }
+
+  /* Cards */
+  .card {
+    @apply rounded-2xl border border-line bg-bg-card;
+  }
+  .card-elevate {
+    @apply rounded-2xl border border-line bg-bg-card transition;
+  }
+  .card-elevate:hover {
+    border-color: rgba(255,255,255,0.16);
+    box-shadow: 0 1px 2px rgba(0,0,0,0.6), 0 18px 40px -16px rgba(0,0,0,0.7);
+    transform: translateY(-2px);
+  }
+
+  /* Chips */
+  .chip {
+    @apply inline-flex items-center gap-1.5 rounded-full border border-line bg-bg-card/70 px-3 py-1 text-[11px] font-medium tracking-wide text-ink-soft;
+  }
+  .chip-red {
+    @apply inline-flex items-center gap-1.5 rounded-full bg-red px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest text-white;
+  }
+
+  /* Subtle hero grid */
+  .bg-grid-dark {
+    background-image:
+      linear-gradient(to right, rgba(255,255,255,0.04) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(255,255,255,0.04) 1px, transparent 1px);
+    background-size: 96px 96px;
+    background-position: -1px -1px;
+    mask-image: radial-gradient(ellipse 70% 55% at 50% 30%, black 30%, transparent 100%);
+  }
+
+  /* Editorial column ruling */
+  .col-rule > * + * { border-top: 1px solid rgba(255,255,255,0.08); }
+
+  /* Library category badge */
+  .cat-badge {
+    @apply inline-flex items-center gap-1.5 rounded-md bg-black/65 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-widest text-white backdrop-blur;
+    border: 1px solid rgba(255,255,255,0.10);
+  }
+}
+
+/* Italic accent helper using display font */
+.italic-accent { color: #B91C1C; }
+
+/* Index numerals (display font, dim) */
+.index-num {
+  font-family: var(--font-display), Impact, sans-serif;
+  font-variant-numeric: tabular-nums;
+  color: rgba(255,255,255,0.18);
+  text-transform: uppercase;
+}
+
+/* Soft red aura for hero */
+.red-aura {
+  background:
+    radial-gradient(40% 30% at 20% 10%, rgba(185,28,28,0.18), transparent 70%),
+    radial-gradient(35% 28% at 85% 30%, rgba(185,28,28,0.10), transparent 70%);
+  filter: blur(20px);
+}
+
+.hairline { border-color: rgba(255,255,255,0.08); }
