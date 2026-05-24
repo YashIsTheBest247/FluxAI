@@ -35,6 +35,7 @@ async def health():
     return {
         "status": "ok",
         "mock_mode": settings.use_mock,
+        "provider": settings.provider_normalized,
         "version": "1.0.0",
         "channel_url": settings.flux_channel_url or None,
     }

@@ -1,8 +1,17 @@
-"""Script generation service. Uses GPT-4 to break a topic into scene-wise narration."""
+"""Script generation service.
+
+Supports two providers:
+  * "openai" — GPT-4 chat completions (paid)
+  * "gemini" — Google Gemini generateContent REST API (free tier)
+
+Falls back to a deterministic synthesised outline if no credentials are configured
+(or if MOCK_MODE=true).
+"""
 import json
-import math
 import logging
 from typing import List, Optional
+
+import httpx
 
 from ..config import settings
 from ..models.schemas import Scene
@@ -24,7 +33,6 @@ def _mock_scenes(topic: str, duration: int, key_points: Optional[str]) -> tuple[
     n = max(4, min(8, duration // 6))
     per = duration / n
     title = topic.strip().title()
-    scenes = []
     snippets = [
         f"{title} begins with a foundational idea that shapes everything that follows.",
         f"At its core, {title.lower()} rests on a few simple principles you can grasp in seconds.",
@@ -45,6 +53,7 @@ def _mock_scenes(topic: str, duration: int, key_points: Optional[str]) -> tuple[
         "data visualization, neon gradient, dark background",
         "high-detail illustration, painterly style, rich contrast",
     ]
+    scenes: List[Scene] = []
     for i in range(n):
         scenes.append(Scene(
             index=i,
@@ -55,14 +64,27 @@ def _mock_scenes(topic: str, duration: int, key_points: Optional[str]) -> tuple[
     return title, scenes
 
 
-async def generate_scenes(topic: str, duration: int, key_points: Optional[str] = None) -> tuple[str, List[Scene]]:
-    if settings.use_mock:
-        logger.info("script_service: MOCK_MODE -> returning synthesised scenes")
-        return _mock_scenes(topic, duration, key_points)
+def _parse_scenes_payload(data: dict, topic: str, duration: int) -> tuple[str, List[Scene]]:
+    title = data.get("title", topic.title())
+    scenes_raw = data.get("scenes", [])
+    total = sum(float(s.get("duration", 1)) for s in scenes_raw) or 1
+    factor = duration / total
+    scenes = [
+        Scene(
+            index=i,
+            narration=str(s["narration"]).strip(),
+            image_prompt=str(s["image_prompt"]).strip(),
+            duration=round(float(s.get("duration", 1)) * factor, 2),
+        )
+        for i, s in enumerate(scenes_raw)
+        if "narration" in s and "image_prompt" in s
+    ]
+    return title, scenes
 
+
+async def _openai_scenes(topic: str, duration: int, key_points: Optional[str]) -> tuple[str, List[Scene]]:
     from openai import AsyncOpenAI
     client = AsyncOpenAI(api_key=settings.openai_api_key)
-
     user = f"TOPIC: {topic}\nDURATION: {duration} seconds\nKEY POINTS: {key_points or '(none)'}"
     resp = await client.chat.completions.create(
         model=settings.gpt_model,
@@ -73,22 +95,58 @@ async def generate_scenes(topic: str, duration: int, key_points: Optional[str] =
         response_format={"type": "json_object"},
         temperature=0.7,
     )
-    data = json.loads(resp.choices[0].message.content)
-    title = data.get("title", topic.title())
-    scenes_raw = data.get("scenes", [])
+    return _parse_scenes_payload(json.loads(resp.choices[0].message.content), topic, duration)
 
-    # Normalize durations to match requested total
-    total = sum(float(s.get("duration", 1)) for s in scenes_raw) or 1
-    factor = duration / total
-    scenes = [
-        Scene(
-            index=i,
-            narration=s["narration"].strip(),
-            image_prompt=s["image_prompt"].strip(),
-            duration=round(float(s.get("duration", 1)) * factor, 2),
-        )
-        for i, s in enumerate(scenes_raw)
-    ]
+
+async def _gemini_scenes(topic: str, duration: int, key_points: Optional[str]) -> tuple[str, List[Scene]]:
+    if not settings.gemini_api_key:
+        raise RuntimeError("GEMINI_API_KEY not set")
+
+    user = f"TOPIC: {topic}\nDURATION: {duration} seconds\nKEY POINTS: {key_points or '(none)'}"
+    url = (
+        f"https://generativelanguage.googleapis.com/v1beta/models/"
+        f"{settings.gemini_model}:generateContent?key={settings.gemini_api_key}"
+    )
+    body = {
+        "systemInstruction": {"parts": [{"text": SYSTEM_PROMPT}]},
+        "contents": [{"role": "user", "parts": [{"text": user}]}],
+        "generationConfig": {
+            "temperature": 0.7,
+            "responseMimeType": "application/json",
+        },
+    }
+    async with httpx.AsyncClient(timeout=60) as client:
+        r = await client.post(url, json=body)
+        r.raise_for_status()
+        data = r.json()
+
+    try:
+        text = data["candidates"][0]["content"]["parts"][0]["text"]
+    except (KeyError, IndexError) as e:
+        raise RuntimeError(f"Unexpected Gemini response shape: {e}; payload={data}")
+
+    payload = json.loads(text)
+    return _parse_scenes_payload(payload, topic, duration)
+
+
+async def generate_scenes(topic: str, duration: int, key_points: Optional[str] = None) -> tuple[str, List[Scene]]:
+    if settings.use_mock:
+        logger.info("script_service: MOCK_MODE -> synthesised scenes")
+        return _mock_scenes(topic, duration, key_points)
+
+    provider = settings.provider_normalized
+    try:
+        if provider == "gemini":
+            logger.info("script_service: using Gemini (%s)", settings.gemini_model)
+            title, scenes = await _gemini_scenes(topic, duration, key_points)
+        else:
+            logger.info("script_service: using OpenAI (%s)", settings.gpt_model)
+            title, scenes = await _openai_scenes(topic, duration, key_points)
+    except Exception as e:
+        logger.exception("script_service: %s failed (%s) — falling back to mock", provider, e)
+        return _mock_scenes(topic, duration, key_points)
+
     if not scenes:
+        logger.warning("script_service: provider returned no scenes, using mock")
         return _mock_scenes(topic, duration, key_points)
     return title, scenes

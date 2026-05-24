@@ -27,23 +27,85 @@ def _static_scene_clip(image_path: Path, duration: float):
     return ImageClip(str(image_path)).set_duration(duration).resize(newsize=(VIDEO_W, VIDEO_H))
 
 
-def _text_clip_safe(text: str, fontsize: int, size=(None, None), color="white", stroke=False):
-    """Try several TextClip configurations; return None if ImageMagick isn't available."""
-    from moviepy.editor import TextClip
-    attempts = [
-        dict(fontsize=fontsize, color=color, font="Arial-Bold", method="caption", size=size,
-             stroke_color="black" if stroke else None, stroke_width=2 if stroke else 0),
-        dict(fontsize=fontsize, color=color, method="caption", size=size),
-        dict(fontsize=fontsize, color=color),
+def _find_font(size: int):
+    """Locate a usable TrueType font across Windows/Linux/macOS. Falls back to PIL default."""
+    from PIL import ImageFont
+    candidates = [
+        # Windows
+        r"C:\Windows\Fonts\arialbd.ttf",
+        r"C:\Windows\Fonts\segoeuib.ttf",
+        r"C:\Windows\Fonts\Arial.ttf",
+        r"C:\Windows\Fonts\segoeui.ttf",
+        # Linux
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+        # macOS
+        "/Library/Fonts/Arial Bold.ttf",
+        "/System/Library/Fonts/Helvetica.ttc",
     ]
-    for kwargs in attempts:
+    for p in candidates:
         try:
-            kwargs = {k: v for k, v in kwargs.items() if v is not None or k == "size"}
-            return TextClip(text, **kwargs)
-        except Exception as e:
-            logger.debug("TextClip attempt failed (%s): %s", kwargs, e)
-    logger.warning("All TextClip attempts failed — ImageMagick likely not installed. Skipping text overlay.")
-    return None
+            return ImageFont.truetype(p, size)
+        except Exception:
+            continue
+    return ImageFont.load_default()
+
+
+def _wrap_text(text: str, font, max_width: int):
+    """Word-wrap to fit max_width pixels; respects existing newlines."""
+    out = []
+    for paragraph in text.splitlines() or [text]:
+        words = paragraph.split()
+        if not words:
+            out.append("")
+            continue
+        cur = ""
+        for w in words:
+            test = (cur + " " + w).strip()
+            bbox = font.getbbox(test)
+            if (bbox[2] - bbox[0]) > max_width and cur:
+                out.append(cur)
+                cur = w
+            else:
+                cur = test
+        if cur:
+            out.append(cur)
+    return out
+
+
+def _text_clip_safe(text: str, fontsize: int, size=(None, None), color="white", stroke=False):
+    """Render `text` to a transparent RGBA bitmap via Pillow and return a MoviePy ImageClip.
+
+    Bypasses MoviePy's ImageMagick-dependent TextClip entirely. Always succeeds.
+    """
+    from PIL import Image, ImageDraw
+    from moviepy.editor import ImageClip
+    import numpy as np
+
+    width = size[0] if (size and size[0]) else 1100
+    font = _find_font(fontsize)
+    lines = _wrap_text(text, font, max(200, width - 40))
+
+    line_height = int(fontsize * 1.25)
+    pad = max(12, fontsize // 3)
+    canvas_w = max(200, width)
+    canvas_h = line_height * max(1, len(lines)) + pad * 2
+
+    img = Image.new("RGBA", (canvas_w, canvas_h), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(img)
+
+    y = pad
+    for line in lines:
+        bbox = font.getbbox(line)
+        line_w = bbox[2] - bbox[0]
+        x = (canvas_w - line_w) // 2
+        if stroke:
+            draw.text((x, y), line, font=font, fill=color, stroke_width=3, stroke_fill="black")
+        else:
+            draw.text((x, y), line, font=font, fill=color)
+        y += line_height
+
+    return ImageClip(np.array(img), transparent=True)
 
 
 def _intro_outro(text: str, duration: float = 1.6):
@@ -71,6 +133,40 @@ def _subtitle_clips(srt_path: Path):
     return clips
 
 
+def _ensure_ffmpeg() -> str:
+    """Locate a usable ffmpeg binary and tell imageio/moviepy to use it.
+
+    Search order:
+      1. System PATH (`ffmpeg` command)
+      2. Bundled binary that ships with `imageio-ffmpeg` (moviepy's hard dependency)
+
+    Returns the path it picked. Raises only if both fail.
+    """
+    import os, shutil, subprocess
+
+    exe = shutil.which("ffmpeg")
+    if not exe:
+        try:
+            import imageio_ffmpeg
+            exe = imageio_ffmpeg.get_ffmpeg_exe()
+        except Exception as e:
+            raise RuntimeError(
+                f"No ffmpeg on PATH and imageio-ffmpeg fallback failed ({e}). "
+                "Install ffmpeg with `winget install --id Gyan.FFmpeg` (then restart your shell), "
+                "or reinstall the backend deps to fetch the bundled binary."
+            )
+
+    # Pin it so MoviePy always uses this exact binary, even if PATH changes.
+    os.environ["IMAGEIO_FFMPEG_EXE"] = exe
+    os.environ["FFMPEG_BINARY"] = exe
+
+    try:
+        subprocess.run([exe, "-version"], capture_output=True, timeout=5, check=True)
+    except Exception as e:
+        raise RuntimeError(f"ffmpeg located at {exe} but unusable: {e}")
+    return exe
+
+
 def assemble_video(
     title: str,
     scenes: List[Scene],
@@ -79,6 +175,8 @@ def assemble_video(
     srt_path: Path,
     out_path: Path,
 ) -> Path:
+    _ensure_ffmpeg()
+
     from moviepy.editor import (
         AudioFileClip,
         CompositeVideoClip,
@@ -115,10 +213,10 @@ def assemble_video(
         codec="libx264",
         audio_codec="aac",
         bitrate="1500k",
-        preset="ultrafast",   # ~10x faster than 'medium', file is bigger but quality is fine for 720p
-        threads=8,
-        verbose=False,
-        logger=None,
+        preset="ultrafast",
+        threads=4,
+        verbose=True,
+        logger="bar",  # show progress in the uvicorn terminal — no more silent hangs
         temp_audiofile=str(out_path.with_suffix(".audio.m4a")),
         remove_temp=True,
         ffmpeg_params=["-tune", "stillimage", "-movflags", "+faststart"],

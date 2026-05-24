@@ -1,14 +1,21 @@
-"""Image generation service. DALL-E 3 with a deterministic placeholder fallback."""
+"""Image generation service.
+
+Supports two providers:
+  * "openai"  — DALL-E 3 (paid)
+  * "gemini"  — Pollinations.ai (free, no key needed)
+
+Falls back to a deterministic gradient placeholder when no provider succeeds.
+"""
 import asyncio
 import base64
 import hashlib
-import io
 import logging
+import urllib.parse
 from pathlib import Path
 from typing import List
 
 import httpx
-from PIL import Image, ImageDraw, ImageFilter, ImageFont
+from PIL import Image, ImageDraw, ImageFilter
 
 from ..config import settings
 from ..models.schemas import Scene
@@ -67,29 +74,56 @@ async def _download(url: str, dest: Path) -> Path:
     return dest
 
 
+async def _openai_image(prompt: str, out: Path) -> Path:
+    from openai import AsyncOpenAI
+    client = AsyncOpenAI(api_key=settings.openai_api_key)
+    resp = await client.images.generate(
+        model=settings.image_model,
+        prompt=prompt,
+        size=settings.image_size,
+        quality="standard",
+        n=1,
+    )
+    item = resp.data[0]
+    if getattr(item, "url", None):
+        return await _download(item.url, out)
+    if getattr(item, "b64_json", None):
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_bytes(base64.b64decode(item.b64_json))
+        return out
+    raise RuntimeError("DALL-E returned neither url nor b64_json")
+
+
+async def _pollinations_image(prompt: str, out: Path) -> Path:
+    """Pollinations.ai — no auth required. GET an image URL and download the bytes."""
+    encoded = urllib.parse.quote(prompt, safe="")
+    seed = int(hashlib.md5(prompt.encode()).hexdigest()[:8], 16) % 1_000_000
+    url = (
+        f"https://image.pollinations.ai/prompt/{encoded}"
+        f"?width=1024&height=1024&model={settings.pollinations_model}"
+        f"&seed={seed}&nologo=true&enhance=true&nofeed=true"
+    )
+    out.parent.mkdir(parents=True, exist_ok=True)
+    async with httpx.AsyncClient(timeout=180, follow_redirects=True) as client:
+        r = await client.get(url)
+        r.raise_for_status()
+        if not r.content or len(r.content) < 1000:
+            raise RuntimeError(f"Pollinations returned empty/small payload ({len(r.content)} bytes)")
+        out.write_bytes(r.content)
+    return out
+
+
 async def generate_image(prompt: str, out: Path) -> Path:
     if settings.use_mock:
         return _placeholder_image(prompt, out)
 
-    from openai import AsyncOpenAI
-    client = AsyncOpenAI(api_key=settings.openai_api_key)
+    provider = settings.provider_normalized
     try:
-        resp = await client.images.generate(
-            model=settings.image_model,
-            prompt=prompt,
-            size=settings.image_size,
-            quality="standard",
-            n=1,
-        )
-        item = resp.data[0]
-        if getattr(item, "url", None):
-            return await _download(item.url, out)
-        if getattr(item, "b64_json", None):
-            out.parent.mkdir(parents=True, exist_ok=True)
-            out.write_bytes(base64.b64decode(item.b64_json))
-            return out
+        if provider == "gemini":
+            return await _pollinations_image(prompt, out)
+        return await _openai_image(prompt, out)
     except Exception as e:
-        logger.exception("image_service: DALL-E failed (%s), falling back to placeholder", e)
+        logger.exception("image_service: %s failed (%s), falling back to placeholder", provider, e)
     return _placeholder_image(prompt, out)
 
 
