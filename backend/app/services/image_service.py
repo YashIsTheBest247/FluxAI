@@ -94,14 +94,26 @@ async def _openai_image(prompt: str, out: Path) -> Path:
     raise RuntimeError("DALL-E returned neither url nor b64_json")
 
 
+def _looks_like_image(data: bytes) -> bool:
+    """Magic-byte sniff for JPEG / PNG / WEBP / GIF. Cheap, no PIL involvement."""
+    return (
+        data.startswith(b"\xff\xd8\xff")            # JPEG
+        or data.startswith(b"\x89PNG\r\n\x1a\n")    # PNG
+        or (data[:4] == b"RIFF" and data[8:12] == b"WEBP")
+        or data.startswith(b"GIF87a") or data.startswith(b"GIF89a")
+    )
+
+
 async def _pollinations_image(prompt: str, out: Path) -> Path:
     """Pollinations.ai — no auth required. GET an image URL and download the bytes.
 
-    Dropped enhance=true and shrank to 768x768 — both are huge speed wins,
-    and the final MP4 is only 1280x720 anyway so we never see the lost detail.
+    Pollinations sometimes returns a 200 OK with an HTML error page or empty body
+    when under load. We validate the response is an actual image (magic bytes +
+    PIL decode round-trip) before accepting it.
     """
     encoded = urllib.parse.quote(prompt, safe="")
     seed = int(hashlib.md5(prompt.encode()).hexdigest()[:8], 16) % 1_000_000
+    # Square 768 — Pollinations is faster at smaller sizes; MoviePy crops to 16:9.
     url = (
         f"https://image.pollinations.ai/prompt/{encoded}"
         f"?width=768&height=768&model={settings.pollinations_model}"
@@ -111,9 +123,24 @@ async def _pollinations_image(prompt: str, out: Path) -> Path:
     async with httpx.AsyncClient(timeout=120, follow_redirects=True) as client:
         r = await client.get(url)
         r.raise_for_status()
-        if not r.content or len(r.content) < 1000:
-            raise RuntimeError(f"Pollinations returned empty/small payload ({len(r.content)} bytes)")
-        out.write_bytes(r.content)
+        data = r.content
+        ctype = r.headers.get("content-type", "")
+        if not data or len(data) < 1000:
+            raise RuntimeError(f"Pollinations returned tiny payload ({len(data)} bytes, type={ctype!r})")
+        if not _looks_like_image(data):
+            preview = data[:80].decode("utf-8", errors="replace")
+            raise RuntimeError(f"Pollinations response is not an image (type={ctype!r}, head={preview!r})")
+        out.write_bytes(data)
+
+    # Round-trip through PIL to confirm the file is decodable. Catches truncated
+    # downloads, mid-stream corruption, and exotic codecs MoviePy can't handle.
+    try:
+        from PIL import Image
+        with Image.open(out) as im:
+            im.verify()
+    except Exception as e:
+        out.unlink(missing_ok=True)
+        raise RuntimeError(f"Pollinations bytes failed PIL verify: {e}")
     return out
 
 
@@ -122,26 +149,44 @@ async def generate_image(prompt: str, out: Path) -> Path:
         return _placeholder_image(prompt, out)
 
     provider = settings.provider_normalized
-    try:
-        if provider == "gemini":
-            return await _pollinations_image(prompt, out)
-        return await _openai_image(prompt, out)
-    except Exception as e:
-        logger.exception("image_service: %s failed (%s), falling back to placeholder", provider, e)
+    # One retry on failure — Pollinations is flaky under load; second attempt
+    # almost always succeeds because the LB has moved to a healthier worker.
+    for attempt in (1, 2):
+        try:
+            if provider == "gemini":
+                return await _pollinations_image(prompt, out)
+            return await _openai_image(prompt, out)
+        except Exception as e:
+            logger.warning(
+                "image_service: %s attempt %d failed (%s)%s",
+                provider, attempt, e, "; retrying" if attempt == 1 else "; falling back to placeholder",
+            )
+            if attempt == 1:
+                await asyncio.sleep(1.0)
     return _placeholder_image(prompt, out)
 
 
 async def generate_images(scenes: List[Scene], out_dir: Path, on_progress=None) -> List[Path]:
-    """Generate all scene images concurrently. Pollinations / DALL-E both handle
-    parallel requests fine, so total wait shrinks from sum(per-image) to ~max(per-image)."""
+    """Generate all scene images concurrently. Concurrency is capped at 3 — much
+    higher and Pollinations starts dropping requests on the floor (their LB
+    rate-limits per-IP burst). 3 is the sweet spot: fast enough to keep total
+    image time near max(individual_time), reliable enough that every scene lands.
+    """
     out_dir.mkdir(parents=True, exist_ok=True)
     total = len(scenes)
     done = 0
     lock = asyncio.Lock()
+    sem = asyncio.Semaphore(3)
 
     async def one(i: int, scene: Scene) -> tuple[int, Path]:
         nonlocal done
-        p = await generate_image(scene.image_prompt, out_dir / f"scene_{i:02d}.png")
+        out = out_dir / f"scene_{i:02d}.png"
+        async with sem:
+            try:
+                p = await generate_image(scene.image_prompt, out)
+            except Exception as e:
+                logger.exception("generate_images: scene %d crashed (%s)", i, e)
+                p = _placeholder_image(scene.image_prompt, out)
         async with lock:
             done += 1
             if on_progress:
@@ -149,6 +194,5 @@ async def generate_images(scenes: List[Scene], out_dir: Path, on_progress=None) 
         return i, p
 
     results = await asyncio.gather(*[one(i, s) for i, s in enumerate(scenes)])
-    # Preserve scene order regardless of which finished first.
     results.sort(key=lambda x: x[0])
     return [p for _, p in results]

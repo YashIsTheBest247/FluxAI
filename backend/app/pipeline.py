@@ -61,20 +61,19 @@ def _new_job(req: GenerateRequest) -> Job:
 
 
 def _set_stage(job: Job, stage: JobStage, progress: float = 0.0, detail: str | None = None) -> None:
-    job.stage = stage
-    order = list(STAGE_WEIGHTS)
-    current_idx = order.index(stage) if stage in order else -1
+    """Update one stage's progress.
+    Does NOT touch other stages — callers must explicitly mark prior stages complete.
+    This is important for parallel stages (image + voice run concurrently): if this
+    function auto-marked "earlier" stages as 1.0, voice's progress callback would
+    keep overwriting the actual image progress on every tick.
+    """
+    job.stage = stage  # primary focus marker (may flip rapidly during parallel)
     for s in job.stages:
-        s_idx = order.index(s.stage) if s.stage in order else -1
         if s.stage == stage:
             s.progress = progress
             s.detail = detail
-        elif current_idx >= 0 and s_idx >= 0 and s_idx < current_idx:
-            s.progress = 1.0
-    # Recompute total
-    total = 0.0
-    for s in job.stages:
-        total += STAGE_WEIGHTS.get(s.stage, 0) * s.progress
+            break
+    total = sum(STAGE_WEIGHTS.get(s.stage, 0) * s.progress for s in job.stages)
     job.progress = round(total, 4)
     job.updated_at = datetime.utcnow()
     save_job(job)
@@ -105,6 +104,10 @@ async def run_pipeline(job: Job) -> None:
             image_service.generate_images(scenes, work_dir / "images", on_progress=img_cb),
             voice_service.synthesize_scenes(scenes, work_dir / "audio", on_progress=v_cb),
         )
+        # Guarantee both are marked complete before moving on (defends against
+        # the final progress callback being dropped if a scene errors fast).
+        _set_stage(job, JobStage.IMAGE, 1.0, f"{len(image_paths)} scenes")
+        _set_stage(job, JobStage.VOICE, 1.0, f"{len(audio_results)} tracks")
         audio_lengths = [d for _, d in audio_results]
 
         # 4. Subtitles
@@ -128,7 +131,7 @@ async def run_pipeline(job: Job) -> None:
         assembly_service.make_thumbnail(image_paths[0], thumb_path)
         _set_stage(job, JobStage.ASSEMBLY, 1.0)
 
-        # 6. YouTube upload
+        # 6. YouTube upload (Short + captions track + thumbnail)
         youtube_url = None
         if job.auto_upload:
             _set_stage(job, JobStage.UPLOAD, 0.2, "Uploading to YouTube")
@@ -144,11 +147,16 @@ async def run_pipeline(job: Job) -> None:
                 )
                 youtube_url = yt.url
                 job.youtube_url = yt.url
+                _set_stage(job, JobStage.UPLOAD, 0.7, "Attaching captions")
+                # Caption upload is non-fatal — log and continue if it fails.
+                await asyncio.to_thread(
+                    youtube_service.upload_captions, yt.video_id, srt_path
+                )
             except Exception as e:
                 logger.exception("upload failed: %s", e)
                 _set_stage(job, JobStage.UPLOAD, 1.0, f"Upload skipped: {e}")
             else:
-                _set_stage(job, JobStage.UPLOAD, 1.0, "Uploaded")
+                _set_stage(job, JobStage.UPLOAD, 1.0, "Uploaded + captioned")
         else:
             _set_stage(job, JobStage.UPLOAD, 1.0, "Skipped")
 

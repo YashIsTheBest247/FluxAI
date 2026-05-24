@@ -50,16 +50,25 @@ export default function FeatureGrid() {
     return jobs.find((j) => !["done", "failed"].includes(j.stage)) ?? null;
   }, [jobs]);
 
+  // Drive each stage's visual state directly from its own progress value,
+  // not from the single `job.stage` field. This makes parallel stages (image +
+  // voice run concurrently) both glow at the same time instead of one
+  // overwriting the other every poll.
   const stageStates = useMemo<StageState[]>(() => {
-    if (!active || active.stage === "queued") return STAGES.map(() => "idle");
-    if (active.stage === "done") return STAGES.map(() => "done");
+    if (!active) return STAGES.map(() => "idle");
     if (active.stage === "failed") {
       const failedIdx = active.stages.findIndex((s) => s.progress < 1);
       const fIdx = failedIdx === -1 ? 0 : failedIdx;
       return STAGES.map((_, i) => (i < fIdx ? "done" : i === fIdx ? "failed" : "idle"));
     }
-    const idx = STAGE_INDEX[active.stage] ?? -1;
-    return STAGES.map((_, i) => (i < idx ? "done" : i === idx ? "active" : "idle"));
+
+    return STAGES.map((s) => {
+      const sp = active.stages.find((x) => x.stage === s.stage);
+      if (!sp) return "idle";
+      if (sp.progress >= 1) return "done";
+      if (sp.progress > 0)  return "active";
+      return "idle";
+    });
   }, [active]);
 
   const status = useMemo<{ label: string; tone: "ok" | "red" | "fail"; pulse: boolean }>(() => {
@@ -67,8 +76,18 @@ export default function FeatureGrid() {
     if (active.stage === "done")   return { label: "RENDER COMPLETE", tone: "ok",   pulse: false };
     if (active.stage === "failed") return { label: "RENDER FAILED",   tone: "fail", pulse: false };
     if (active.stage === "queued") return { label: "QUEUED",          tone: "red",  pulse: true  };
-    const idx = STAGE_INDEX[active.stage] ?? 0;
-    return { label: `RENDERING · ${STAGES[idx]?.title ?? ""}`, tone: "red", pulse: true };
+
+    // For the header label, list every stage that's actively running.
+    const running = STAGES
+      .filter((s) => {
+        const sp = active.stages.find((x) => x.stage === s.stage);
+        return sp && sp.progress > 0 && sp.progress < 1;
+      })
+      .map((s) => s.title);
+    const label = running.length
+      ? `RENDERING · ${running.join(" + ")}`
+      : `RENDERING · ${STAGES[STAGE_INDEX[active.stage] ?? 0]?.title ?? ""}`;
+    return { label, tone: "red", pulse: true };
   }, [active, videos.length]);
 
   return (

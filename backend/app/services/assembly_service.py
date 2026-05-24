@@ -17,14 +17,34 @@ from ..models.schemas import Scene
 
 logger = logging.getLogger(__name__)
 
-VIDEO_W, VIDEO_H = 1280, 720
-FPS = 24  # 24fps is cinematic and ~20% less to encode than 30
+VIDEO_W, VIDEO_H = 1280, 720   # standard landscape 720p HD
+FPS = 24                       # cinematic and ~20% less work than 30
+
+
+def _ensure_decodable(image_path: Path) -> Path:
+    """Last-line defense: if the image file is missing or PIL can't decode it,
+    overwrite with a placeholder so the scene still renders something.
+    Without this, one bad upstream image (corrupt Pollinations response, truncated
+    DALL-E download, etc.) would silently produce a black/missing scene in the cut.
+    """
+    from PIL import Image
+    try:
+        if not image_path.exists() or image_path.stat().st_size < 1000:
+            raise RuntimeError("image missing or tiny")
+        with Image.open(image_path) as im:
+            im.verify()
+        return image_path
+    except Exception as e:
+        logger.warning("assembly: image %s unusable (%s) — substituting placeholder", image_path.name, e)
+        from .image_service import _placeholder_image
+        return _placeholder_image(image_path.stem, image_path)
 
 
 def _static_scene_clip(image_path: Path, duration: float):
     """Pre-sized static ImageClip — far cheaper than per-frame Ken Burns transforms."""
     from moviepy.editor import ImageClip
-    return ImageClip(str(image_path)).set_duration(duration).resize(newsize=(VIDEO_W, VIDEO_H))
+    safe_path = _ensure_decodable(image_path)
+    return ImageClip(str(safe_path)).set_duration(duration).resize(newsize=(VIDEO_W, VIDEO_H))
 
 
 def _find_font(size: int):
@@ -119,6 +139,7 @@ def _intro_outro(text: str, duration: float = 1.6):
 
 
 def _subtitle_clips(srt_path: Path):
+    """Subtitles for landscape 16:9 — sits at the bottom safe area of the player."""
     import pysrt
     subs = pysrt.open(str(srt_path), encoding="utf-8")
     clips = []
@@ -229,10 +250,19 @@ def assemble_video(
 
 
 def make_thumbnail(image_path: Path, out: Path) -> Path:
-    """Use the first scene image as the thumbnail."""
+    """Landscape 1280x720 thumbnail (YouTube's recommended max). Center-crop the
+    first scene so the most interesting part survives the crop."""
     from PIL import Image
     out.parent.mkdir(parents=True, exist_ok=True)
+    target_w, target_h = 1280, 720
     img = Image.open(image_path).convert("RGB")
-    img.thumbnail((640, 360))
+
+    src_w, src_h = img.size
+    scale = max(target_w / src_w, target_h / src_h)
+    new_w, new_h = int(src_w * scale), int(src_h * scale)
+    img = img.resize((new_w, new_h), Image.LANCZOS)
+    left = (new_w - target_w) // 2
+    top = (new_h - target_h) // 2
+    img = img.crop((left, top, left + target_w, top + target_h))
     img.save(out, "JPEG", quality=88)
     return out
