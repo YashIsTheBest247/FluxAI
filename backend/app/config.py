@@ -43,6 +43,11 @@ class Settings(BaseSettings):
 
     youtube_client_secrets: str = "secrets/youtube_client_secret.json"
     youtube_token_file: str = "secrets/youtube_token.json"
+    # Raw JSON of the OAuth client secret + persisted token. Hosts without
+    # persistent disk (Render free) ship the JSON as env vars; the app
+    # writes them to disk on startup so google-auth-oauthlib can read them.
+    youtube_client_secret_json: str = ""
+    youtube_token_json: str = ""
     youtube_auto_upload: bool = True
     youtube_privacy: str = "unlisted"
     youtube_category_id: str = "27"

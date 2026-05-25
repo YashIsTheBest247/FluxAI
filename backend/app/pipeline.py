@@ -22,6 +22,7 @@ from .services import (
     voice_service,
     youtube_service,
 )
+from .services.youtube_service import TokenMissing
 from .storage import add_video, save_job
 
 logger = logging.getLogger(__name__)
@@ -197,6 +198,11 @@ async def run_pipeline(job: Job) -> None:
                 _set_stage(job, JobStage.UPLOAD, 0.7, "Attaching captions")
                 if srt_path.exists():
                     await asyncio.to_thread(youtube_service.upload_captions, yt.video_id, srt_path)
+            except TokenMissing as e:
+                # Expected when the operator hasn't run setup_youtube.py / token expired.
+                # Don't dump a stack trace for this — it's user-actionable, not a bug.
+                logger.warning("youtube_service: %s — upload skipped", e)
+                _set_stage(job, JobStage.UPLOAD, 1.0, "Upload skipped: no YouTube token")
             except Exception as e:
                 logger.exception("upload failed: %s", e)
                 _set_stage(job, JobStage.UPLOAD, 1.0, f"Upload skipped: {e}")

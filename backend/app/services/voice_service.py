@@ -2,8 +2,9 @@
 
 Provider chain (tried in order):
   1. Microsoft Edge Neural TTS  — free, no key, high quality, the default
-  2. Kokoro TTS (local)         — only if installed + KOKORO_VOICE set
-  3. Silent MP3 fallback        — always succeeds, lets the pipeline finish
+  2. gTTS (Google Translate)    — free, no key, network-based, never breaks
+  3. Kokoro TTS (local)         — only if installed + KOKORO_VOICE set
+  4. Silent MP3 fallback        — always succeeds, lets the pipeline finish
 
 All paths write `.mp3` so downstream concat (podcast) and MoviePy audio mixing
 (video) stay format-consistent.
@@ -70,14 +71,16 @@ async def _edge_tts_synthesize(text: str, out: Path) -> Tuple[Path, float]:
     voice = settings.edge_tts_voice or "en-US-AriaNeural"
     communicate = edge_tts.Communicate(text, voice)
 
-    # WordBoundary offsets are in 100-ns ticks (Windows FILETIME units).
+    # Boundary offsets are in 100-ns ticks (Windows FILETIME units).
+    # edge-tts 6.x emits "WordBoundary"; 7.x renamed to "SentenceBoundary".
+    # Same shape — accept whichever the runtime sends.
     end_ticks = 0
     with open(out_mp3, "wb") as f:
         async for chunk in communicate.stream():
             ctype = chunk.get("type")
             if ctype == "audio":
                 f.write(chunk["data"])
-            elif ctype == "WordBoundary":
+            elif ctype in ("WordBoundary", "SentenceBoundary"):
                 end_ticks = max(end_ticks, chunk["offset"] + chunk["duration"])
 
     if out_mp3.stat().st_size < 200:
@@ -105,6 +108,28 @@ def _probe_audio_duration(path: Path) -> float:
     except Exception as e:
         logger.warning("voice_service: ffprobe duration failed for %s: %s", path, e)
         return _estimate_duration("a" * 100)
+
+
+async def _gtts_synthesize(text: str, out: Path) -> Tuple[Path, float]:
+    """gTTS — Google Translate's TTS endpoint. Lower quality than Edge Neural
+    but extremely reliable (no auth, no rate-limit in practice, no breaking
+    changes). Used when edge-tts is temporarily refusing requests.
+    """
+    from gtts import gTTS
+
+    out_mp3 = out.with_suffix(".mp3")
+    out_mp3.parent.mkdir(parents=True, exist_ok=True)
+
+    # gTTS is sync — push to a thread so we don't block the event loop.
+    def _save():
+        tts = gTTS(text=text, lang="en", slow=False)
+        tts.save(str(out_mp3))
+
+    await asyncio.to_thread(_save)
+    if out_mp3.stat().st_size < 200:
+        raise RuntimeError(f"gTTS wrote a near-empty file ({out_mp3.stat().st_size} bytes)")
+    duration = _probe_audio_duration(out_mp3)
+    return out_mp3, duration
 
 
 async def _kokoro_synthesize(text: str, out: Path) -> Tuple[Path, float]:
@@ -145,20 +170,29 @@ async def synthesize_scene(text: str, out: Path, fallback_seconds: float) -> Tup
     if settings.use_mock:
         return _silent_mp3(out, max(fallback_seconds, _estimate_duration(text)))
 
-    # 1. Edge Neural TTS — free, high quality, the default.
+    # 1. Edge Neural TTS — best quality. Microsoft occasionally tightens auth
+    #    on the public endpoint (403 from wss://speech.platform.bing.com);
+    #    when that happens we fall through to gTTS until edge-tts ships a fix.
     try:
         return await _edge_tts_synthesize(text, out)
     except Exception as e:
-        logger.warning("voice_service: edge-tts failed (%s), trying Kokoro", e)
+        logger.warning("voice_service: edge-tts failed (%s), trying gTTS", e)
 
-    # 2. Kokoro — only if the operator installed it.
+    # 2. gTTS — Google Translate's TTS. Reliable, free, network-based.
+    try:
+        return await _gtts_synthesize(text, out)
+    except Exception as e:
+        logger.warning("voice_service: gTTS failed (%s), trying Kokoro", e)
+
+    # 3. Kokoro — only if the operator installed it. Slow first-run due to
+    #    model download, then CPU-bound during synthesis.
     if settings.kokoro_voice:
         try:
             return await _kokoro_synthesize(text, out)
         except Exception as e:
             logger.warning("voice_service: Kokoro unavailable (%s), using silent fallback", e)
 
-    # 3. Silent placeholder — keeps timing intact so subtitles still sync.
+    # 4. Silent placeholder — keeps timing intact so subtitles still sync.
     return _silent_mp3(out, max(fallback_seconds, _estimate_duration(text)))
 
 

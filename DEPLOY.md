@@ -80,22 +80,64 @@ Editing an env var triggers an automatic redeploy on Render.
 
 ---
 
-## 3. YouTube auto-upload (optional)
+## 3. YouTube auto-upload
 
-Render free has no persistent disk, which means the OAuth token would be
-re-derived on every restart — painful. Two ways to handle it:
+Render free has no persistent disk, so we ship the OAuth credentials as env
+vars and a startup hook in `app/main.py` writes them to `/tmp/secrets/` on
+boot. Setup is one-time and goes like this:
 
-**A. Keep auto-upload off** (default, easiest)
-Leave `YOUTUBE_AUTO_UPLOAD=false` in the blueprint. Renders stay on the box
-until the next restart and the user downloads them from the library before
-the container sleeps.
+### Prereq (one-time, in Google Cloud Console)
 
-**B. Enable it with token-as-env-var**
-Run `python -m app.setup_youtube` locally, base64-encode the resulting
-`secrets/youtube_token.json` and `secrets/youtube_client_secret.json`, then
-set them as env vars in Render and add a small startup hook that writes them
-to `/tmp/secrets/`. Ask if you want this wired up — it's ~15 lines of code
-in `app/main.py`.
+1. https://console.cloud.google.com/apis/credentials → create an OAuth client
+   of type **Desktop app** → download the JSON → save it locally at
+   `backend/secrets/youtube_client_secret.json`.
+2. Enable the API: https://console.developers.google.com/apis/api/youtube.googleapis.com/overview
+   → click **Enable**. (Skip this step and uploads fail with "API has not been
+   used in project X.")
+
+### Step A — generate the token locally
+
+From `backend/`:
+
+```powershell
+python -m app.setup_youtube
+```
+
+This pops a browser tab — sign in with the Google account that owns the
+channel you want renders to publish to. The script writes
+`secrets/youtube_token.json` (contains the refresh token; long-lived).
+
+### Step B — copy both files into Render env vars
+
+On Render → **fragment-backend** → **Environment** tab → set these (they're
+already declared `sync: false` in `render.yaml`):
+
+| Variable                       | Value                                                              |
+|--------------------------------|--------------------------------------------------------------------|
+| `YOUTUBE_CLIENT_SECRET_JSON`   | paste the entire content of `secrets/youtube_client_secret.json`   |
+| `YOUTUBE_TOKEN_JSON`           | paste the entire content of `secrets/youtube_token.json`           |
+
+Render's env editor accepts multi-line JSON — just paste raw, no escaping or
+base64. Save changes; Render redeploys.
+
+### Verify
+
+After the redeploy, check the start-up logs for the line:
+
+```
+hydrated YouTube secret from env -> /tmp/secrets/youtube_client_secret.json
+hydrated YouTube secret from env -> /tmp/secrets/youtube_token.json
+```
+
+Then generate a video from the UI — when it finishes, you'll get a YouTube
+URL in the library card.
+
+### When tokens expire
+
+The refresh token is long-lived but can be revoked if the account is unused
+for ~6 months or if you change Google account passwords. If uploads start
+failing with `TokenMissing` again, re-run `python -m app.setup_youtube`
+locally and re-paste the new `youtube_token.json` content into Render.
 
 ---
 

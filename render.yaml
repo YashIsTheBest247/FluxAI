@@ -22,10 +22,15 @@ services:
         value: gemini
       - key: MOCK_MODE
         value: "false"
-      # Disabled by default — re-enable only after uploading OAuth secrets via
-      # the dashboard, see DEPLOY.md.
       - key: YOUTUBE_AUTO_UPLOAD
-        value: "false"
+        value: "true"
+      # Render's STORAGE_DIR is /tmp/storage; secrets go alongside it under
+      # /tmp/secrets so the hydrate-from-env hook in main.py has a writable
+      # target. (Defaults in config.py point at relative paths used for local dev.)
+      - key: YOUTUBE_CLIENT_SECRETS
+        value: /tmp/secrets/youtube_client_secret.json
+      - key: YOUTUBE_TOKEN_FILE
+        value: /tmp/secrets/youtube_token.json
       - key: ALLOWED_ORIGINS
         sync: false
       - key: GEMINI_API_KEY
@@ -33,4 +38,11 @@ services:
       - key: OPENAI_API_KEY
         sync: false
       - key: FLUX_CHANNEL_URL
+        sync: false
+      # Paste the FULL JSON contents of your local
+      # secrets/youtube_client_secret.json and secrets/youtube_token.json here
+      # via the Render dashboard. Multi-line is fine — Render accepts raw text.
+      - key: YOUTUBE_CLIENT_SECRET_JSON
+        sync: false
+      - key: YOUTUBE_TOKEN_JSON
         sync: false
