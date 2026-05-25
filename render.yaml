@@ -1,0 +1,36 @@
+# Render Blueprint — backend only. The Next.js frontend deploys to Vercel separately.
+# Apply with: https://dashboard.render.com/ → New → Blueprint → connect this repo.
+
+services:
+  - type: web
+    name: fragment-backend
+    runtime: docker
+    plan: free                # 512 MB RAM, 0.1 CPU, sleeps after 15 min idle, no persistent disk
+    region: singapore         # closest free region to Bombay; swap for "oregon"/"frankfurt" if preferred
+    rootDir: backend
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /api/health
+    autoDeploy: true
+
+    envVars:
+      # Values committed here are safe to share. Secrets use sync:false and must
+      # be filled in via the Render dashboard before the first deploy.
+      - key: STORAGE_DIR
+        value: /tmp/storage
+      - key: PROVIDER
+        value: gemini
+      - key: MOCK_MODE
+        value: "false"
+      # Disabled by default — re-enable only after uploading OAuth secrets via
+      # the dashboard, see DEPLOY.md.
+      - key: YOUTUBE_AUTO_UPLOAD
+        value: "false"
+      - key: ALLOWED_ORIGINS
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: FLUX_CHANNEL_URL
+        sync: false

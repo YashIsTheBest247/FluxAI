@@ -1,0 +1,17 @@
+.venv/
+__pycache__/
+**/__pycache__/
+*.pyc
+*.pyo
+*.log
+.env
+.env.*
+secrets/
+storage/
+.pytest_cache/
+.mypy_cache/
+.git/
+.gitignore
+Dockerfile
+.dockerignore
+fly.toml

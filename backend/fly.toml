@@ -1,0 +1,40 @@
+# Rename `app` before the first `fly launch` — must be globally unique.
+app = "fragment-backend"
+primary_region = "bom"
+
+[build]
+
+[env]
+  STORAGE_DIR = "/data/storage"
+  YOUTUBE_CLIENT_SECRETS = "/data/secrets/youtube_client_secret.json"
+  YOUTUBE_TOKEN_FILE = "/data/secrets/youtube_token.json"
+  PORT = "8080"
+  PROVIDER = "gemini"
+
+# Persistent disk for storage/ + secrets/. Survives deploys + restarts.
+[mounts]
+  source = "fragment_data"
+  destination = "/data"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  # Suspend (not full-stop) idle machines — keeps memory state, resumes in ~500ms.
+  # Flip to "off" if you want to keep the backend hot 24/7 for faster first hit.
+  auto_stop_machines = "suspend"
+  auto_start_machines = true
+  min_machines_running = 0
+  processes = ["app"]
+
+  [[http_service.checks]]
+    grace_period = "10s"
+    interval = "30s"
+    method = "GET"
+    timeout = "5s"
+    path = "/api/health"
+
+# 1GB RAM — MoviePy + Pillow video assembly can spike past 512MB on a 720p cut.
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "1gb"
+  cpus = 1

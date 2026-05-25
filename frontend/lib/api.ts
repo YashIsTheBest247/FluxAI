@@ -51,7 +51,32 @@ export interface Job {
   media_type: MediaType;
 }
 
-const BASE = "";
+// `NEXT_PUBLIC_API_URL` is set in Vercel to the Fly backend (e.g.
+// "https://fragment-backend.fly.dev"). Empty for local dev so paths stay relative
+// and the Next.js rewrite/proxy can take over. Strip any trailing slash so
+// `${BASE}/api/...` never doubles up.
+const BASE = (process.env.NEXT_PUBLIC_API_URL ?? "").replace(/\/$/, "");
+
+/** Turn backend-relative media paths ("/media/...") into absolute URLs when
+ *  the API lives on a different origin. No-op in local dev (BASE === ""). */
+function absolutize(url: string | null | undefined): string | null | undefined {
+  if (!url) return url;
+  if (/^https?:\/\//i.test(url)) return url;
+  return `${BASE}${url}`;
+}
+
+function normalizeVideo(v: Video): Video {
+  return {
+    ...v,
+    file_url: absolutize(v.file_url) as string,
+    thumbnail_url: absolutize(v.thumbnail_url),
+    audio_url: absolutize(v.audio_url),
+  };
+}
+
+function normalizeJob(j: Job): Job {
+  return { ...j, video: j.video ? normalizeVideo(j.video) : j.video };
+}
 
 async function json<T>(r: Response): Promise<T> {
   if (!r.ok) {
@@ -68,7 +93,7 @@ export async function generate(payload: {
   privacy?: string;
   media_type?: MediaType;
 }): Promise<Job> {
-  return json<Job>(
+  const j = await json<Job>(
     await fetch(`${BASE}/api/generate`, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -76,19 +101,22 @@ export async function generate(payload: {
       cache: "no-store",
     })
   );
+  return normalizeJob(j);
 }
 
 export async function getJob(id: string): Promise<Job> {
-  return json<Job>(await fetch(`${BASE}/api/jobs/${id}`, { cache: "no-store" }));
+  return normalizeJob(await json<Job>(await fetch(`${BASE}/api/jobs/${id}`, { cache: "no-store" })));
 }
 
 export async function listJobs(): Promise<Job[]> {
-  return json<Job[]>(await fetch(`${BASE}/api/jobs`, { cache: "no-store" }));
+  const js = await json<Job[]>(await fetch(`${BASE}/api/jobs`, { cache: "no-store" }));
+  return js.map(normalizeJob);
 }
 
 export async function listVideos(q?: string): Promise<Video[]> {
   const url = q ? `${BASE}/api/videos?q=${encodeURIComponent(q)}` : `${BASE}/api/videos`;
-  return json<Video[]>(await fetch(url, { cache: "no-store" }));
+  const vs = await json<Video[]>(await fetch(url, { cache: "no-store" }));
+  return vs.map(normalizeVideo);
 }
 
 export async function deleteVideo(id: string): Promise<void> {
