@@ -1,6 +1,6 @@
 # Flux
 
-**Type a topic. Get a finished video. Auto-published to YouTube.**
+**Type a topic. Get a finished video or a podcast ready to be exported.**
 
 Flux is an AI-driven media pipeline that turns a single sentence into a captioned,
 narrated MP4 (or long-form podcast MP3) and ships it straight to the operator's
