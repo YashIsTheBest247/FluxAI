@@ -13,7 +13,7 @@ import { useFluxData } from "@/lib/useFluxData";
 export default function LibrarySection() {
   const { videos, refresh } = useFluxData();
   const [q, setQ] = useState("");
-  const [filter, setFilter] = useState<"all" | "published" | "local">("all");
+  const [filter, setFilter] = useState<"all" | "video" | "podcast" | "published">("all");
   const [sort, setSort] = useState<"recent" | "duration" | "scenes">("recent");
   const [modal, setModal] = useState<Video | null>(null);
 
@@ -23,8 +23,9 @@ export default function LibrarySection() {
       const needle = q.trim().toLowerCase();
       v = v.filter((x) => x.title.toLowerCase().includes(needle) || x.topic.toLowerCase().includes(needle));
     }
+    if (filter === "video") v = v.filter((x) => x.media_type !== "podcast");
+    if (filter === "podcast") v = v.filter((x) => x.media_type === "podcast");
     if (filter === "published") v = v.filter((x) => x.youtube_url);
-    if (filter === "local") v = v.filter((x) => !x.youtube_url);
     if (sort === "recent") v.sort((a, b) => +new Date(b.created_at) - +new Date(a.created_at));
     if (sort === "duration") v.sort((a, b) => b.duration - a.duration);
     if (sort === "scenes") v.sort((a, b) => b.scene_count - a.scene_count);
@@ -50,7 +51,7 @@ export default function LibrarySection() {
                 />
               </div>
               <div className="inline-flex rounded-full border border-line p-1">
-                {(["all", "published", "local"] as const).map((f) => (
+                {(["all", "video", "podcast", "published"] as const).map((f) => (
                   <button
                     key={f}
                     onClick={() => setFilter(f)}

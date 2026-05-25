@@ -18,15 +18,21 @@ class Settings(BaseSettings):
     # === OpenAI ===
     openai_api_key: str = ""
     gpt_model: str = "gpt-4o"
-    image_model: str = "dall-e-3"
+    # gpt-image-1 is OpenAI's current image model (dall-e-3 was rolled off
+    # for many orgs in late 2025 and now returns 400 invalid_value).
+    image_model: str = "gpt-image-1"
     image_size: str = "1024x1024"
 
     # === Google Gemini (free tier) ===
     gemini_api_key: str = ""
     gemini_model: str = "gemini-2.5-flash"   # gemini-1.5-* was deprecated; 2.5 supports JSON mode
+    gemini_image_model: str = "gemini-2.5-flash-image"   # "Nano Banana" image generator — paid fallback
 
     # === Pollinations.ai (free, no key needed) ===
-    pollinations_model: str = "flux"   # 'flux' | 'turbo' | 'sdxl' etc.
+    # `flux` and other premium models were moved behind auth in early 2026 and
+    # now return 402. `sana` is the current anonymous-tier default; the service
+    # rotates through known-free fallbacks if this one stops working.
+    pollinations_model: str = "sana"
 
     kokoro_voice: str = "af_bella"
     kokoro_model_path: str = ""
@@ -52,6 +58,7 @@ class Settings(BaseSettings):
         p = Path(self.storage_dir).resolve()
         p.mkdir(parents=True, exist_ok=True)
         (p / "videos").mkdir(exist_ok=True)
+        (p / "podcasts").mkdir(exist_ok=True)
         (p / "temp").mkdir(exist_ok=True)
         (p / "thumbnails").mkdir(exist_ok=True)
         return p

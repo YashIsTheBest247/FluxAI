@@ -16,6 +16,8 @@ export interface StageProgress {
   detail?: string | null;
 }
 
+export type MediaType = "video" | "podcast";
+
 export interface Video {
   id: string;
   title: string;
@@ -23,10 +25,12 @@ export interface Video {
   duration: number;
   created_at: string;
   file_url: string;
+  audio_url?: string | null;
   thumbnail_url?: string | null;
   resolution: string;
   scene_count: number;
   youtube_url?: string | null;
+  media_type: MediaType;
 }
 
 export interface Job {
@@ -44,6 +48,7 @@ export interface Job {
   auto_upload: boolean;
   privacy: string;
   youtube_url?: string | null;
+  media_type: MediaType;
 }
 
 const BASE = "";
@@ -61,12 +66,13 @@ export async function generate(payload: {
   duration: number;
   key_points?: string;
   privacy?: string;
+  media_type?: MediaType;
 }): Promise<Job> {
   return json<Job>(
     await fetch(`${BASE}/api/generate`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ ...payload, auto_upload: true }),
+      body: JSON.stringify({ media_type: "video", ...payload, auto_upload: true }),
       cache: "no-store",
     })
   );

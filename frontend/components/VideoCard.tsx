@@ -1,7 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { Download, ExternalLink, Play, Trash2, X, Youtube, Film, Clapperboard, FileVideo } from "lucide-react";
+import { Download, ExternalLink, Play, Trash2, X, Youtube, Film, Clapperboard, FileVideo, Mic, Headphones } from "lucide-react";
 import type { Video } from "@/lib/api";
 
 /**
@@ -120,12 +120,25 @@ export default function VideoCard({
             <span>{new Date(video.created_at).toLocaleDateString("en-US", { month: "short", day: "2-digit" })}</span>
           </div>
           <div className="flex items-center gap-1">
+            {video.audio_url && (
+              <a
+                href={video.audio_url}
+                download
+                onClick={(e) => e.stopPropagation()}
+                className="grid h-7 w-7 place-items-center rounded text-ink-muted transition hover:bg-bg-hover hover:text-red"
+                aria-label="Download MP3"
+                title="Download MP3"
+              >
+                <Headphones className="h-3.5 w-3.5" />
+              </a>
+            )}
             <a
               href={video.file_url}
               download
               onClick={(e) => e.stopPropagation()}
               className="grid h-7 w-7 place-items-center rounded text-ink-muted transition hover:bg-bg-hover hover:text-ink"
               aria-label="Download"
+              title={video.media_type === "podcast" ? "Download MP4 cover-cut" : "Download MP4"}
             >
               <Download className="h-3.5 w-3.5" />
             </a>
@@ -159,6 +172,11 @@ export default function VideoCard({
 }
 
 function pickCategory(v: Video): { label: string; icon: typeof Film } {
+  if (v.media_type === "podcast") {
+    if (v.duration <= 90)  return { label: "INTERLUDE", icon: Mic };
+    if (v.duration <= 300) return { label: "EPISODE",   icon: Headphones };
+    return { label: "DEEP DIVE", icon: Headphones };
+  }
   // Deterministic mapping from duration to a documentary-style category.
   if (v.duration <= 20)  return { label: "TEASER",     icon: Clapperboard };
   if (v.duration <= 45)  return { label: "TRAILER",    icon: Clapperboard };
@@ -197,7 +215,21 @@ export function VideoModal({ video, onClose }: { video: Video; onClose: () => vo
             <X className="h-4 w-4" />
           </button>
         </div>
-        <video src={video.file_url} controls autoPlay className="w-full bg-black" />
+        {video.media_type === "podcast" && video.audio_url ? (
+          <div className="relative bg-black">
+            {video.thumbnail_url && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={video.thumbnail_url}
+                alt={video.title}
+                className="aspect-video w-full object-cover opacity-90"
+              />
+            )}
+            <audio src={video.audio_url} controls autoPlay className="absolute inset-x-0 bottom-0 w-full" />
+          </div>
+        ) : (
+          <video src={video.file_url} controls autoPlay className="w-full bg-black" />
+        )}
       </motion.div>
     </motion.div>
   );

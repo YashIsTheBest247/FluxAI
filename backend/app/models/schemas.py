@@ -16,12 +16,18 @@ class JobStage(str, Enum):
     FAILED = "failed"
 
 
+class MediaType(str, Enum):
+    VIDEO = "video"
+    PODCAST = "podcast"
+
+
 class GenerateRequest(BaseModel):
     topic: str = Field(..., min_length=2, max_length=120)
-    duration: int = Field(30, ge=10, le=180)
+    duration: int = Field(30, ge=10, le=600)
     key_points: Optional[str] = Field(default=None, max_length=2000)
     auto_upload: bool = True
     privacy: str = "unlisted"
+    media_type: MediaType = MediaType.VIDEO
 
 
 class Scene(BaseModel):
@@ -45,10 +51,12 @@ class Video(BaseModel):
     duration: int
     created_at: datetime
     file_url: str
+    audio_url: Optional[str] = None
     thumbnail_url: Optional[str] = None
     resolution: str = "1080p"
     scene_count: int = 0
     youtube_url: Optional[str] = None
+    media_type: MediaType = MediaType.VIDEO
 
 
 class Job(BaseModel):
@@ -66,6 +74,7 @@ class Job(BaseModel):
     auto_upload: bool = True
     privacy: str = "unlisted"
     youtube_url: Optional[str] = None
+    media_type: MediaType = MediaType.VIDEO
 
 
 class YouTubeUploadResult(BaseModel):
