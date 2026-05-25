@@ -37,6 +37,10 @@ class Settings(BaseSettings):
     kokoro_voice: str = "af_bella"
     kokoro_model_path: str = ""
 
+    # Microsoft Edge Neural TTS — free, no key, runs over the same WebSocket the
+    # Edge browser uses. Default voice list: https://gist.github.com/BettyJJ/17cbaa1de96235a7f5773b8690a20462
+    edge_tts_voice: str = "en-US-AriaNeural"
+
     youtube_client_secrets: str = "secrets/youtube_client_secret.json"
     youtube_token_file: str = "secrets/youtube_token.json"
     youtube_auto_upload: bool = True

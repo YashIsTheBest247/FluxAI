@@ -215,21 +215,16 @@ export function VideoModal({ video, onClose }: { video: Video; onClose: () => vo
             <X className="h-4 w-4" />
           </button>
         </div>
-        {video.media_type === "podcast" && video.audio_url ? (
-          <div className="relative bg-black">
-            {video.thumbnail_url && (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={video.thumbnail_url}
-                alt={video.title}
-                className="aspect-video w-full object-cover opacity-90"
-              />
-            )}
-            <audio src={video.audio_url} controls autoPlay className="absolute inset-x-0 bottom-0 w-full" />
-          </div>
-        ) : (
-          <video src={video.file_url} controls autoPlay className="w-full bg-black" />
-        )}
+        {/* Both modes play the MP4 — for podcasts it's a static-cover MP4 with
+            burned-in subtitles + audio, so the user gets visuals + captions
+            during playback. The MP3 download stays available via the card. */}
+        <video
+          src={video.file_url}
+          poster={video.thumbnail_url ?? undefined}
+          controls
+          autoPlay
+          className="w-full bg-black"
+        />
       </motion.div>
     </motion.div>
   );
