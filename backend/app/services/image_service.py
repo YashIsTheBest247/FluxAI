@@ -117,8 +117,11 @@ def _extract_headline(prompt: str) -> tuple[str, str]:
     text = prompt.strip()
     lowered = text.lower()
     for prefix in (
-        "a wide shot of ", "a cinematic shot of ", "cinematic shot of ",
+        "a wide cinematic shot of ", "a wide angle shot of ", "a wide shot of ",
+        "a cinematic shot of ", "a cinematic photo of ", "cinematic shot of ",
         "a close-up of ", "a close up of ", "close-up of ",
+        "an aerial view of ", "a top-down view of ", "a top down view of ",
+        "an overhead shot of ", "a low angle shot of ", "a panoramic view of ",
         "wide shot, ", "wide cinematic shot, ", "macro photography, ",
         "shot of ", "view of ",
     ):
@@ -246,6 +249,120 @@ def _looks_like_image(data: bytes) -> bool:
 def _verify_image_file(path: Path) -> None:
     with Image.open(path) as im:
         im.verify()
+
+
+# Filler words we strip from stock-search queries so the keyword match doesn't
+# get diluted by function words.
+_STOPWORDS = frozenset({
+    "a", "an", "the", "of", "in", "on", "at", "to", "for", "with", "by",
+    "into", "onto", "from", "and", "or", "but", "is", "are", "was", "were",
+    "be", "as", "that", "this", "these", "those", "its", "their",
+})
+
+
+def _stock_query(prompt: str) -> str:
+    """Turn the LLM's verbose image prompt into a stock-search-friendly query.
+    Strip cinematography prefix, drop stopwords, cap at first 4 content words.
+    """
+    headline, _ = _extract_headline(prompt)
+    words = [w for w in headline.split() if w.lower().strip(",.;:!?") not in _STOPWORDS]
+    return " ".join(words[:4]).strip(",.;:!?")
+
+
+async def _unsplash_image(prompt: str, out: Path) -> Path:
+    """Unsplash search — first hit, landscape orientation. Free tier is 50 req/hr."""
+    if "unsplash" in _PROVIDER_DOWN:
+        raise RuntimeError("unsplash provider marked down for this run")
+    if not settings.unsplash_access_key:
+        raise RuntimeError("UNSPLASH_ACCESS_KEY not set")
+
+    query = _stock_query(prompt)
+    search_url = "https://api.unsplash.com/search/photos"
+    params = {"query": query, "per_page": 1, "orientation": "landscape"}
+    headers = {"Authorization": f"Client-ID {settings.unsplash_access_key}"}
+
+    async with httpx.AsyncClient(timeout=30) as client:
+        r = await client.get(search_url, params=params, headers=headers)
+        if r.status_code in (401, 403):
+            _mark_down("unsplash", f"{r.status_code} from search (bad key)")
+            raise RuntimeError(f"unsplash auth failed ({r.status_code})")
+        if r.status_code == 429:
+            _mark_down("unsplash", "429 hourly rate limit")
+            raise RuntimeError("unsplash rate limited")
+        r.raise_for_status()
+        data = r.json()
+
+    total = int(data.get("total") or 0)
+    results = data.get("results") or []
+    logger.info("unsplash: query=%r total=%d", query, total)
+    if not results:
+        raise RuntimeError(f"unsplash: no results for {query!r}")
+    if total < 10:
+        raise RuntimeError(f"unsplash: too few matches ({total}) for {query!r} — likely irrelevant")
+
+    img_url = results[0]["urls"]["regular"]
+    out.parent.mkdir(parents=True, exist_ok=True)
+    async with httpx.AsyncClient(timeout=60, follow_redirects=True) as client:
+        r = await client.get(img_url)
+        r.raise_for_status()
+        body = r.content
+        if not body or len(body) < 1000 or not _looks_like_image(body):
+            raise RuntimeError(f"unsplash: bad image bytes ({len(body)} B)")
+        out.write_bytes(body)
+    try:
+        _verify_image_file(out)
+    except Exception as e:
+        out.unlink(missing_ok=True)
+        raise RuntimeError(f"unsplash bytes failed PIL verify: {e}")
+    return out
+
+
+async def _pexels_image(prompt: str, out: Path) -> Path:
+    """Pexels search — first hit, landscape orientation. Free tier is 200 req/hr."""
+    if "pexels" in _PROVIDER_DOWN:
+        raise RuntimeError("pexels provider marked down for this run")
+    if not settings.pexels_api_key:
+        raise RuntimeError("PEXELS_API_KEY not set")
+
+    query = _stock_query(prompt)
+    search_url = "https://api.pexels.com/v1/search"
+    params = {"query": query, "per_page": 1, "orientation": "landscape"}
+    headers = {"Authorization": settings.pexels_api_key}
+
+    async with httpx.AsyncClient(timeout=30) as client:
+        r = await client.get(search_url, params=params, headers=headers)
+        if r.status_code == 401:
+            _mark_down("pexels", "401 from search (bad key)")
+            raise RuntimeError("pexels auth failed")
+        if r.status_code == 429:
+            _mark_down("pexels", "429 hourly rate limit")
+            raise RuntimeError("pexels rate limited")
+        r.raise_for_status()
+        data = r.json()
+
+    total = int(data.get("total_results") or 0)
+    photos = data.get("photos") or []
+    logger.info("pexels: query=%r total=%d", query, total)
+    if not photos:
+        raise RuntimeError(f"pexels: no results for {query!r}")
+    if total < 10:
+        raise RuntimeError(f"pexels: too few matches ({total}) for {query!r} — likely irrelevant")
+
+    img_url = photos[0]["src"].get("large2x") or photos[0]["src"]["large"]
+    out.parent.mkdir(parents=True, exist_ok=True)
+    async with httpx.AsyncClient(timeout=60, follow_redirects=True) as client:
+        r = await client.get(img_url)
+        r.raise_for_status()
+        body = r.content
+        if not body or len(body) < 1000 or not _looks_like_image(body):
+            raise RuntimeError(f"pexels: bad image bytes ({len(body)} B)")
+        out.write_bytes(body)
+    try:
+        _verify_image_file(out)
+    except Exception as e:
+        out.unlink(missing_ok=True)
+        raise RuntimeError(f"pexels bytes failed PIL verify: {e}")
+    return out
 
 
 async def _openai_image(prompt: str, out: Path) -> Path:
@@ -387,10 +504,27 @@ async def _gemini_image(prompt: str, out: Path) -> Path:
 
 
 def _provider_chain() -> List[Callable[[str, Path], Awaitable[Path]]]:
+    """Build the provider chain freshly per scene (so a provider going down
+    mid-render takes effect immediately).
+
+    Stock providers (Unsplash, Pexels) go FIRST when their keys are configured
+    — they return real photos in ~1-2s, ~3-5× faster than AI gen. They fall
+    through cleanly to AI gen when a query has no results or too few matches.
+    """
+    chain: List[Callable[[str, Path], Awaitable[Path]]] = []
+
+    if settings.unsplash_access_key and "unsplash" not in _PROVIDER_DOWN:
+        chain.append(_unsplash_image)
+    if settings.pexels_api_key and "pexels" not in _PROVIDER_DOWN:
+        chain.append(_pexels_image)
+
     primary = settings.provider_normalized
     if primary == "openai":
-        return [_openai_image, _pollinations_image, _gemini_image]
-    return [_pollinations_image, _gemini_image, _openai_image]
+        chain.extend([_openai_image, _pollinations_image, _gemini_image])
+    else:
+        chain.extend([_pollinations_image, _gemini_image, _openai_image])
+
+    return chain
 
 
 async def generate_image(prompt: str, out: Path) -> Path:

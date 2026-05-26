@@ -34,6 +34,16 @@ class Settings(BaseSettings):
     # rotates through known-free fallbacks if this one stops working.
     pollinations_model: str = "sana"
 
+    # === Stock photo APIs (real photography, ~3-5× faster than AI gen) ===
+    # Both are free at hobby scale. When either is configured it goes FIRST in
+    # the provider chain so renders pull real photos when the LLM prompt
+    # matches something a human photographer ever shot; AI gen only runs
+    # for abstract / surreal prompts that have no stock match.
+    # Unsplash:  https://unsplash.com/developers     (50 req/hr free)
+    # Pexels:    https://www.pexels.com/api/         (200 req/hr free)
+    unsplash_access_key: str = ""
+    pexels_api_key: str = ""
+
     kokoro_voice: str = "af_bella"
     kokoro_model_path: str = ""
 

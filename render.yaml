@@ -39,6 +39,12 @@ services:
         sync: false
       - key: FLUX_CHANNEL_URL
         sync: false
+      # Stock photo APIs — when set, tried BEFORE AI gen (faster, free, real photos).
+      # Free signup: unsplash.com/developers, pexels.com/api
+      - key: UNSPLASH_ACCESS_KEY
+        sync: false
+      - key: PEXELS_API_KEY
+        sync: false
       # Paste the FULL JSON contents of your local
       # secrets/youtube_client_secret.json and secrets/youtube_token.json here
       # via the Render dashboard. Multi-line is fine — Render accepts raw text.
