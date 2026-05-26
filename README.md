@@ -54,15 +54,14 @@ modern laptop.
 
 Six async stages, fully observable via `/api/jobs/{id}`:
 
-| Stage     | What it does                                   | Provider chain (in order)     |
-| --------- | ------------------------------------------------- | ---------------------------------------------------------- |
-| Script    | Topic → scene-by-scene narration + image prompts. Narration is capped by a **word budget** (`duration × 2.5 wps`) so output length matches the requested duration. | Gemini 2.5 Flash → OpenAI GPT-4o → deterministic mock |
-
-| Image     | Image prompt → 1024×1024 PNG per scene. Real photos win on speed, AI gen takes over only when the search returns < 10 matches. | **Pexels** → Unsplash → Pollinations.ai → Gemini Flash Image → OpenAI gpt-image-1 → poster-style PIL placeholder |
-| Voice     | Narration text → MP3 per scene                    | Microsoft Edge Neural TTS → gTTS → Kokoro (local) → silent track |
-| Subtitles | Align text against measured audio lengths         | pysrt (deterministic)                                      |
-| Assembly  | Scenes + audio + subtitles → final MP4 / MP3      | ffmpeg + libass / MoviePy                                  |
-| Publish   | Upload MP4, attach SRT, set thumbnail             | YouTube Data API v3 (OAuth 2.0)                            |
+| Stage     | What it does                                                                                                                                                       | Provider chain (in order)                                                                                        |
+| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------- |
+| Script    | Topic → scene-by-scene narration + image prompts. Narration is capped by a **word budget** (`duration × 2.5 wps`) so output length matches the requested duration. | Gemini 2.5 Flash → OpenAI GPT-4o → deterministic mock                                                            |
+| Image     | Image prompt → 1024×1024 PNG per scene. Real photos win on speed, AI gen takes over only when the search returns < 10 matches.                                     | **Pexels** → Unsplash → Pollinations.ai → Gemini Flash Image → OpenAI gpt-image-1 → poster-style PIL placeholder |
+| Voice     | Narration text → MP3 per scene                                                                                                                                     | Microsoft Edge Neural TTS → gTTS → Kokoro (local) → silent track                                                 |
+| Subtitles | Align text against measured audio lengths                                                                                                                          | pysrt (deterministic)                                                                                            |
+| Assembly  | Scenes + audio + subtitles → final MP4 / MP3                                                                                                                       | ffmpeg + libass / MoviePy                                                                                        |
+| Publish   | Upload MP4, attach SRT, set thumbnail                                                                                                                              | YouTube Data API v3 (OAuth 2.0)                                                                                  |
 
 Each provider tier is **memoised per-process**: once it returns a structural
 failure (402 / 429 / 403), it's marked down and skipped for the rest of the
