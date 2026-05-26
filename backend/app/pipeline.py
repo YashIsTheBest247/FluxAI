@@ -200,12 +200,21 @@ async def run_pipeline(job: Job) -> None:
                     await asyncio.to_thread(youtube_service.upload_captions, yt.video_id, srt_path)
             except TokenMissing as e:
                 # Expected when the operator hasn't run setup_youtube.py / token expired.
-                # Don't dump a stack trace for this — it's user-actionable, not a bug.
                 logger.warning("youtube_service: %s — upload skipped", e)
                 _set_stage(job, JobStage.UPLOAD, 1.0, "Upload skipped: no YouTube token")
             except Exception as e:
-                logger.exception("upload failed: %s", e)
-                _set_stage(job, JobStage.UPLOAD, 1.0, f"Upload skipped: {e}")
+                # googleapiclient surfaces API-side issues as HttpError. The common
+                # ones are user-actionable (API not enabled, quota exceeded, channel
+                # not configured) and don't need a stack trace dumped at them.
+                name = type(e).__name__
+                if name in ("HttpError", "ResumableUploadError"):
+                    msg = str(e).split("returned", 1)[-1].strip().split('"')
+                    short = msg[1] if len(msg) > 1 else str(e)[:200]
+                    logger.warning("youtube_service: upload skipped (%s)", short)
+                    _set_stage(job, JobStage.UPLOAD, 1.0, f"Upload skipped: {short[:120]}")
+                else:
+                    logger.exception("upload failed: %s", e)
+                    _set_stage(job, JobStage.UPLOAD, 1.0, f"Upload skipped: {e}")
             else:
                 _set_stage(job, JobStage.UPLOAD, 1.0, "Uploaded + captioned")
         else:
