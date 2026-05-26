@@ -18,8 +18,20 @@ from ..models.schemas import Scene
 
 logger = logging.getLogger(__name__)
 
+# Narration is read by neural TTS at ~150 words per minute (2.5 wps).
+# This is a HARD ceiling — if narration overshoots, the video runs long because
+# audio length drives the final cut. Be conservative and undershoot.
+NARRATION_WPS = 2.5
+
+
 SYSTEM_PROMPT = """You are a senior educational video scriptwriter.
-You will receive a TOPIC, target DURATION in seconds, and optional KEY POINTS.
+You will receive a TOPIC, target DURATION in seconds, an exact WORD BUDGET,
+and optional KEY POINTS.
+
+CRITICAL: the TOTAL narration across all scenes MUST stay within the WORD
+BUDGET. The narration is read by a neural TTS at ~150 words/minute, so
+overshooting the word budget directly makes the video too long. Under is fine,
+over is forbidden.
 
 SCENE COUNT rules — fewer is faster and tighter:
   - DURATION <= 20s  → exactly 3 scenes
@@ -28,7 +40,9 @@ SCENE COUNT rules — fewer is faster and tighter:
   - DURATION > 90s   → 5 or 6 scenes (NEVER more than 6)
 
 For each scene produce:
-  - narration: 1-3 sentences, conversational, factual, no filler
+  - narration: short, conversational, factual, no filler. Distribute the word
+    budget roughly evenly across scenes. Prefer ONE crisp sentence over two
+    bloated ones.
   - image_prompt: a vivid, cinematic visual description (no text overlays, no logos)
   - duration: seconds (float), summing approximately to the target duration
 
@@ -76,7 +90,42 @@ def _mock_scenes(topic: str, duration: int, key_points: Optional[str]) -> tuple[
             image_prompt=f"{topic}: {visuals[i % len(visuals)]}",
             duration=round(per, 2),
         ))
-    return title, scenes
+    return title, _enforce_word_budget(scenes, duration)
+
+
+def _word_budget(duration: int) -> int:
+    """How many words of narration fit in `duration` seconds at our TTS rate.
+    Slightly under-counted on purpose — better to undershoot than land long."""
+    return max(8, int(duration * NARRATION_WPS * 0.95))
+
+
+def _enforce_word_budget(scenes: List["Scene"], duration: int) -> List["Scene"]:
+    """Trim narrations so the total word count stays within budget.
+
+    The LLM tends to overshoot on short durations even with a hard cap in the
+    prompt. This is a safety net: walk scene-by-scene, cut to a per-scene
+    share, drop trailing fragments cleanly at a word boundary.
+    """
+    budget = _word_budget(duration)
+    total_words = sum(len(s.narration.split()) for s in scenes)
+    if total_words <= budget:
+        return scenes
+
+    n = len(scenes) or 1
+    per_scene = max(3, budget // n)
+    trimmed: List["Scene"] = []
+    for s in scenes:
+        words = s.narration.split()
+        if len(words) > per_scene:
+            cut = " ".join(words[:per_scene]).rstrip(",;:") + "."
+        else:
+            cut = s.narration
+        trimmed.append(s.model_copy(update={"narration": cut}))
+    logger.info(
+        "script_service: trimmed narration %d→%d words to hit ~%ds budget",
+        total_words, sum(len(s.narration.split()) for s in trimmed), duration,
+    )
+    return trimmed
 
 
 def _parse_scenes_payload(data: dict, topic: str, duration: int) -> tuple[str, List[Scene]]:
@@ -94,13 +143,23 @@ def _parse_scenes_payload(data: dict, topic: str, duration: int) -> tuple[str, L
         for i, s in enumerate(scenes_raw)
         if "narration" in s and "image_prompt" in s
     ]
-    return title, scenes
+    return title, _enforce_word_budget(scenes, duration)
+
+
+def _user_prompt(topic: str, duration: int, key_points: Optional[str]) -> str:
+    budget = _word_budget(duration)
+    return (
+        f"TOPIC: {topic}\n"
+        f"DURATION: {duration} seconds\n"
+        f"WORD BUDGET: {budget} words total across all scenes (HARD MAX — going over makes the video too long)\n"
+        f"KEY POINTS: {key_points or '(none)'}"
+    )
 
 
 async def _openai_scenes(topic: str, duration: int, key_points: Optional[str]) -> tuple[str, List[Scene]]:
     from openai import AsyncOpenAI
     client = AsyncOpenAI(api_key=settings.openai_api_key)
-    user = f"TOPIC: {topic}\nDURATION: {duration} seconds\nKEY POINTS: {key_points or '(none)'}"
+    user = _user_prompt(topic, duration, key_points)
     resp = await client.chat.completions.create(
         model=settings.gpt_model,
         messages=[
@@ -117,7 +176,7 @@ async def _gemini_scenes(topic: str, duration: int, key_points: Optional[str]) -
     if not settings.gemini_api_key:
         raise RuntimeError("GEMINI_API_KEY not set")
 
-    user = f"TOPIC: {topic}\nDURATION: {duration} seconds\nKEY POINTS: {key_points or '(none)'}"
+    user = _user_prompt(topic, duration, key_points)
     url = (
         f"https://generativelanguage.googleapis.com/v1beta/models/"
         f"{settings.gemini_model}:generateContent?key={settings.gemini_api_key}"

@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { ArrowUpRight, Play } from "lucide-react";
 import HeroChannelCard from "./HeroChannelCard";
+import RecentYouTubeUploads from "./RecentYouTubeUploads";
 
 const ease = [0.22, 1, 0.36, 1] as const;
 
@@ -67,7 +68,10 @@ export default function Hero() {
             </motion.div>
           </div>
 
-          <HeroChannelCard />
+          <div>
+            <HeroChannelCard />
+            <RecentYouTubeUploads />
+          </div>
         </div>
       </div>
 
