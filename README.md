@@ -16,19 +16,24 @@ once; every render published through the app lands on that channel.
 ---
 
 ## What it actually costs to make a video
-
-| Approach                                   | Cost per 60-second video |
-| ------------------------------------------ | ------------------------ |
+```bash
+| Approach                                    | Cost per 60-second video |
+| ------------------------------------------  | ------------------------ |
 | Hiring a freelance editor (Fiverr / Upwork) | **$50 – $200**           |
-| SaaS tools (Synthesia, Pictory, InVideo)   | **$1 – $3**              |
-| **Flux on free providers** (default)       | **$0.00**                |
+| SaaS tools (Synthesia, Pictory, InVideo)    | **$1 – $3**              |
+| **Flux on free providers** (default)        | **$0.00**                |
 | Flux on premium providers (OpenAI + Gemini) | ~$0.25                   |
+```
 
-Flux's default chain is **Pollinations.ai + Microsoft Edge Neural TTS + Google
-Gemini 2.5 Flash** — all free tier, no credit card. A creator producing 50 short
-videos a month who would otherwise spend ~$2,500–10,000 on freelancers (or
-~$60–180 on a SaaS tool) pays **nothing** with Flux — only the host bill
-(Render free tier or ~$3–5/mo on Fly.io).
+Flux's default free chain is **Pexels + Microsoft Edge Neural TTS + Google
+Gemini 2.5 Flash** — all free tier, no credit card. Stock-photo lookup
+returns real photography in ~1 second per scene (3-5× faster than AI gen),
+and the chain transparently falls back to Pollinations / Gemini Image / a
+poster-style PIL placeholder for abstract prompts that have no stock match.
+
+A creator producing 50 short videos a month who would otherwise spend
+~$2,500–10,000 on freelancers (or ~$60–180 on a SaaS tool) pays **nothing**
+with Flux — only the host bill (Render free tier or ~$3–5/mo on Fly.io).
 
 ---
 
@@ -49,10 +54,11 @@ modern laptop.
 
 Six async stages, fully observable via `/api/jobs/{id}`:
 
-| Stage     | What it does                                      | Provider chain (in order)                                  |
+| Stage     | What it does                                   | Provider chain (in order)     |
 | --------- | ------------------------------------------------- | ---------------------------------------------------------- |
-| Script    | Topic → scene-by-scene narration + image prompts  | Gemini 2.5 Flash → OpenAI GPT-4o → deterministic mock     |
-| Image     | Image prompt → 1024×1024 PNG per scene            | Pollinations.ai → Gemini Flash Image → OpenAI gpt-image-1 → poster-style PIL placeholder |
+| Script    | Topic → scene-by-scene narration + image prompts. Narration is capped by a **word budget** (`duration × 2.5 wps`) so output length matches the requested duration. | Gemini 2.5 Flash → OpenAI GPT-4o → deterministic mock |
+
+| Image     | Image prompt → 1024×1024 PNG per scene. Real photos win on speed, AI gen takes over only when the search returns < 10 matches. | **Pexels** → Unsplash → Pollinations.ai → Gemini Flash Image → OpenAI gpt-image-1 → poster-style PIL placeholder |
 | Voice     | Narration text → MP3 per scene                    | Microsoft Edge Neural TTS → gTTS → Kokoro (local) → silent track |
 | Subtitles | Align text against measured audio lengths         | pysrt (deterministic)                                      |
 | Assembly  | Scenes + audio + subtitles → final MP4 / MP3      | ffmpeg + libass / MoviePy                                  |
@@ -62,6 +68,10 @@ Each provider tier is **memoised per-process**: once it returns a structural
 failure (402 / 429 / 403), it's marked down and skipped for the rest of the
 session — no quota-burning retry storm, no slow render because of a dead
 upstream.
+
+For abstract prompts (concept art, diagrams, surreal imagery), stock-photo
+queries naturally return few results and the chain falls through to AI gen
+automatically — no special-casing required.
 
 ---
 
@@ -74,6 +84,8 @@ upstream.
 **Media** — ffmpeg (libass for burned subtitles), MoviePy 1.0.3, Pillow + NumPy (deterministic poster fallback), pysrt.
 
 **AI** — OpenAI GPT-4o + gpt-image-1, Google Gemini 2.5 Flash + Flash Image, Pollinations.ai, Microsoft Edge Neural TTS, gTTS, Kokoro.
+
+**Stock photos** — Pexels and Unsplash APIs (both free tier, no card). Real photography wins on speed; AI gen takes over for abstract prompts.
 
 **Auth & integrations** — YouTube Data API v3 (OAuth 2.0 installed-app flow), refresh-token persistence with env-var hydration for stateless hosts.
 
@@ -144,6 +156,11 @@ Set `MOCK_MODE=false` and pick a provider in `backend/.env`:
 PROVIDER=gemini                              # or "openai"
 GEMINI_API_KEY=...                           # free tier at aistudio.google.com
 ALLOWED_ORIGINS=https://your-frontend.app
+
+# Recommended: stock photo APIs at the top of the chain — real photos in ~1s
+# per scene, both free at hobby scale. Either is enough; both is best.
+PEXELS_API_KEY=...                           # free at pexels.com/api
+UNSPLASH_ACCESS_KEY=...                      # free at unsplash.com/developers
 ```
 
 For deploying the backend to Render or Fly.io and the frontend to Vercel,
@@ -173,7 +190,7 @@ materialised to disk on boot.
 ---
 
 ## API surface
-
+```bash
 | Method | Path                       | Purpose                                |
 | ------ | -------------------------- | -------------------------------------- |
 | POST   | `/api/generate`            | Submit a new job (video or podcast)    |
@@ -184,7 +201,7 @@ materialised to disk on boot.
 | DELETE | `/api/videos/{id}`         | Remove a video (file + index)          |
 | POST   | `/api/youtube/upload`      | Re-upload an existing video manually   |
 | GET    | `/api/health`              | Service status / mock-mode flag        |
-
+```
 `POST /api/generate`:
 
 ```json
